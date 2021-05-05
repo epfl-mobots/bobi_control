@@ -49,6 +49,7 @@ namespace bobi {
             _ros_dt = msg->header.stamp - _prev_stamp;
             _dt = std::max(_ros_dt.toSec(), 1e-6);
             _prev_stamp = msg->header.stamp;
+            _prev_pose = _pose;
             _pose = *msg;
         }
 
@@ -67,6 +68,7 @@ namespace bobi {
         ros::Subscriber _pose_sub;
         std::mutex _pose_mtx;
         bobi_msgs::PoseStamped _pose;
+        bobi_msgs::PoseStamped _prev_pose;
 
         ros::Time _prev_stamp;
         ros::Duration _ros_dt;

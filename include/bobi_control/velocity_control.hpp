@@ -26,6 +26,11 @@ namespace bobi {
             if (_prev_stamp > ros::Time(0)) {
                 std::lock_guard<std::mutex> guard(_pose_mtx);
 
+                if (_target_velocities.left == 0. && _target_velocities.right == 0.) {
+                    _set_vel_pub.publish(_target_velocities);
+                    return;
+                }
+
                 double yaw = _pose.pose.rpy.yaw;
                 double vx = ((_pose.pose.xyz.x - _prev_pose.pose.xyz.x) / _dt);
                 double vy = ((_pose.pose.xyz.y - _prev_pose.pose.xyz.y) / _dt);
@@ -46,7 +51,8 @@ namespace bobi {
                 p[1] = _Kp[1] * error[1];
 
                 // integral
-                if (_prev_target != _target_velocities) {
+                // if (abs(error[0] < 0.01 && error[1] < 0.01)) {
+                if (_target_velocities != _prev_target) {
                     _integral = {0., 0.};
                     _prev_target = _target_velocities;
                 }
@@ -63,19 +69,18 @@ namespace bobi {
 
                 // clipping values
                 bobi_msgs::MotorVelocities new_velocities;
-                new_velocities.left = _clip(p[0] + i[0] + d[0], 0);
-                new_velocities.right = _clip(p[1] + i[1] + d[1], 1);
+                new_velocities.left = _clip(_current_velocities.left + (p[0] + i[0] + d[0]) / _scaler[0], 0);
+                new_velocities.right = _clip(_current_velocities.right + (p[1] + i[1] + d[1]) / _scaler[1], 1);
 
                 if (_verbose) {
+                    ROS_INFO("--- dt = %f", _dt);
                     ROS_INFO("Current velocities(left, right) = (%f, %f)", _current_velocities.left, _current_velocities.right);
                     ROS_INFO("Target velocities(left, right) = (%f, %f)", _target_velocities.left, _target_velocities.right);
                     ROS_INFO("New velocities(left, right) = (%f, %f)", new_velocities.left, new_velocities.right);
                 }
 
                 _set_vel_pub.publish(new_velocities);
-
                 _prev_error = error;
-                _prev_pose = _pose;
             }
         }
 
@@ -88,6 +93,7 @@ namespace bobi {
             _Kd = {config.left_Kd, config.right_Kd};
             _lb = {config.left_lb, config.right_lb};
             _ub = {config.left_ub, config.right_ub};
+            _scaler = {config.scaler_left, config.scaler_right};
             _verbose = config.verbose;
         }
 
@@ -105,9 +111,9 @@ namespace bobi {
         std::array<double, 2> _prev_error;
         std::array<double, 2> _integral;
         std::array<double, 2> _lb, _ub;
+        std::array<double, 2> _scaler;
         bool _verbose;
 
-        bobi_msgs::PoseStamped _prev_pose;
         bobi_msgs::MotorVelocities _current_velocities;
         bobi_msgs::MotorVelocities _prev_target;
     };
