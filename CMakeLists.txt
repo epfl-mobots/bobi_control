@@ -42,3 +42,7 @@ add_dependencies(velocity_controller_node ${catkin_EXPORTED_TARGETS} ${PROJECT_N
 add_executable(position_controller_node src/position_controller_node.cpp)
 target_link_libraries(position_controller_node ${catkin_LIBRARIES})
 add_dependencies(position_controller_node ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg bobi_msgs_generate_messages_cpp)
+
+add_executable(circular_trajectory_node src/test/circular_trajectory_node.cpp)
+target_link_libraries(circular_trajectory_node ${catkin_LIBRARIES})
+add_dependencies(circular_trajectory_node ${catkin_EXPORTED_TARGETS} bobi_msgs_generate_messages_cpp)
