@@ -21,6 +21,7 @@ find_package(
 
 generate_dynamic_reconfigure_options(
   config/VelocityController.cfg
+  config/PositionController.cfg
 )
 
 catkin_package(
@@ -37,3 +38,7 @@ include_directories(
 add_executable(velocity_controller_node src/velocity_controller_node.cpp)
 target_link_libraries(velocity_controller_node ${catkin_LIBRARIES})
 add_dependencies(velocity_controller_node ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg bobi_msgs_generate_messages_cpp)
+
+add_executable(position_controller_node src/position_controller_node.cpp)
+target_link_libraries(position_controller_node ${catkin_LIBRARIES})
+add_dependencies(position_controller_node ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg bobi_msgs_generate_messages_cpp)

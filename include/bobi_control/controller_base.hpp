@@ -16,6 +16,13 @@ namespace bobi {
         {
             _pose_sub = _nh->subscribe("robot_pose", 1, &ControllerBase::_pose_cb, this);
             _target_vel_sub = _nh->subscribe("target_velocities", 1, &ControllerBase::_target_velocities_cb, this);
+            _target_pos_sub = _nh->subscribe("target_position", 1, &ControllerBase::_target_position_cb, this);
+
+            _target_velocities.left = 0.;
+            _target_velocities.right = 0.;
+            _target_position.pose.xyz.x = 0.;
+            _target_position.pose.xyz.y = 0.;
+            _target_position.pose.rpy.yaw = 0.;
         }
 
         virtual void spin_once() = 0;
@@ -59,11 +66,21 @@ namespace bobi {
             _target_velocities = *msg;
         }
 
+        void _target_position_cb(const bobi_msgs::PoseStamped::ConstPtr& msg)
+        {
+            std::lock_guard<std::mutex> guard(_tpos_mtx);
+            _target_position = *msg;
+        }
+
         std::shared_ptr<ros::NodeHandle> _nh;
 
         ros::Subscriber _target_vel_sub;
         std::mutex _tvel_mtx;
         bobi_msgs::MotorVelocities _target_velocities;
+
+        ros::Subscriber _target_pos_sub;
+        std::mutex _tpos_mtx;
+        bobi_msgs::PoseStamped _target_position;
 
         ros::Subscriber _pose_sub;
         std::mutex _pose_mtx;

@@ -24,7 +24,8 @@ namespace bobi {
         void spin_once()
         {
             if (_prev_stamp > ros::Time(0)) {
-                std::lock_guard<std::mutex> guard(_pose_mtx);
+                std::lock_guard<std::mutex> pose_guard(_pose_mtx);
+                std::lock_guard<std::mutex> vel_guard(_tvel_mtx);
 
                 if (_target_velocities.left == 0. && _target_velocities.right == 0.) {
                     _set_vel_pub.publish(_target_velocities);
@@ -51,9 +52,9 @@ namespace bobi {
                 p[1] = _Kp[1] * error[1];
 
                 // integral
-                // if (abs(error[0] < 0.01 && error[1] < 0.01)) {
                 if (_target_velocities != _prev_target) {
                     _integral = {0., 0.};
+                    _prev_error = {0., 0.};
                     _prev_target = _target_velocities;
                 }
                 _integral[0] += error[0] * _dt;
