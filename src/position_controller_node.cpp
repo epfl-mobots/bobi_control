@@ -9,7 +9,12 @@ int main(int argc, char** argv)
     ros::init(argc, argv, "position_controller_node");
     std::shared_ptr<ros::NodeHandle> nh(new ros::NodeHandle());
 
-    PositionControl ctrl(nh);
+    int id;
+    nh->param<int>("robot_id", id, -1);
+
+    std::cout << id << std::endl;
+
+    PositionControl ctrl(nh, id);
 
     int rate;
     nh->param<int>("rate", rate, 30);

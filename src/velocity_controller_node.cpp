@@ -9,7 +9,10 @@ int main(int argc, char** argv)
     ros::init(argc, argv, "velocity_controller_node");
     std::shared_ptr<ros::NodeHandle> nh(new ros::NodeHandle());
 
-    VelocityControl ctrl(nh);
+    int id;
+    nh->param<int>("robot_id", id, -1);
+
+    VelocityControl ctrl(nh, id);
 
     int rate;
     nh->param<int>("rate", rate, 30);

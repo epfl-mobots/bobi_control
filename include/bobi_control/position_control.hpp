@@ -9,8 +9,8 @@
 namespace bobi {
     class PositionControl : public ControllerBase {
     public:
-        PositionControl(std::shared_ptr<ros::NodeHandle> nh)
-            : ControllerBase(nh),
+        PositionControl(std::shared_ptr<ros::NodeHandle> nh, int id)
+            : ControllerBase(nh, id),
               _prev_error{0, 0},
               _integral{0, 0}
         {

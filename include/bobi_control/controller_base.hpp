@@ -3,18 +3,22 @@
 
 #include <ros/ros.h>
 #include <bobi_msgs/PoseStamped.h>
+#include <bobi_msgs/PoseVec.h>
 #include <bobi_msgs/MotorVelocities.h>
+
+#include <cassert>
 
 namespace bobi {
 
     class ControllerBase {
     public:
-        ControllerBase(std::shared_ptr<ros::NodeHandle> nh)
+        ControllerBase(std::shared_ptr<ros::NodeHandle> nh, int id)
             : _nh(nh),
               _ros_dt(0),
-              _dt(0)
+              _dt(0),
+              _id(id)
         {
-            _pose_sub = _nh->subscribe("robot_pose", 1, &ControllerBase::_pose_cb, this);
+            _pose_sub = _nh->subscribe("robot_poses", 1, &ControllerBase::_pose_cb, this);
             _target_vel_sub = _nh->subscribe("target_velocities", 1, &ControllerBase::_target_velocities_cb, this);
             _target_pos_sub = _nh->subscribe("target_position", 1, &ControllerBase::_target_position_cb, this);
 
@@ -50,14 +54,17 @@ namespace bobi {
             return angle;
         }
 
-        void _pose_cb(const bobi_msgs::PoseStamped::ConstPtr& msg)
+        void _pose_cb(const bobi_msgs::PoseVec::ConstPtr& msg)
         {
             std::lock_guard<std::mutex> guard(_pose_mtx);
-            _ros_dt = msg->header.stamp - _prev_stamp;
+            assert(_id >= 0);
+            assert(_id <= msg->poses.size());
+
+            _ros_dt = msg->poses[_id].header.stamp - _prev_stamp;
             _dt = std::max(_ros_dt.toSec(), 1e-6);
-            _prev_stamp = msg->header.stamp;
+            _prev_stamp = msg->poses[_id].header.stamp;
             _prev_pose = _pose;
-            _pose = *msg;
+            _pose = (*msg).poses[_id];
         }
 
         void _target_velocities_cb(const bobi_msgs::MotorVelocities::ConstPtr& msg)
@@ -73,6 +80,7 @@ namespace bobi {
         }
 
         std::shared_ptr<ros::NodeHandle> _nh;
+        const int _id;
 
         ros::Subscriber _target_vel_sub;
         std::mutex _tvel_mtx;

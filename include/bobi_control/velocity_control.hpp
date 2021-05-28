@@ -9,8 +9,8 @@
 namespace bobi {
     class VelocityControl : public ControllerBase {
     public:
-        VelocityControl(std::shared_ptr<ros::NodeHandle> nh)
-            : ControllerBase(nh),
+        VelocityControl(std::shared_ptr<ros::NodeHandle> nh, int id)
+            : ControllerBase(nh, id),
               _prev_error{0, 0},
               _integral{0, 0}
         {
