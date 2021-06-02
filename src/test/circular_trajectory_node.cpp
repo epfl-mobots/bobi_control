@@ -27,8 +27,8 @@ int main(int argc, char** argv)
     ros::Rate loop_rate(1);
     int iter = 0;
     while (ros::ok()) {
+        ROS_INFO("(x=%f, y=%f)", waypoints[iter].pose.xyz.x, waypoints[iter].pose.xyz.y);
         wp_pub.publish(waypoints[iter++]);
-        std::cout << waypoints[iter++] << std::endl;
         if (iter == num_waypoints) {
             iter = 0;
         }

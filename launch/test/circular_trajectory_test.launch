@@ -1,11 +1,6 @@
 <launch>
 
     <arg name="ns" default="/" />
-
-    <include file="$(find bobi_fishbot_interface)/launch/fishbot_dummy.launch" ns="$(arg ns)"/>
-    <include file="$(find bobi_models)/launch/fishbot_simu.launch" ns="$(arg ns)"/>
-    <include file="$(find bobi_control)/launch/position_controller.launch" ns="$(arg ns)"/>
-
     <group ns="$(arg ns)">
         <rosparam command="load" file="$(find bobi_control)/config/test/circular_trajectory.yaml" />
         <node name="circular_trajectory_node" pkg="bobi_control" type="circular_trajectory_node" output="screen"/>
