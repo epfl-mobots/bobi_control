@@ -9,11 +9,13 @@
 namespace bobi {
     class PositionControl : public ControllerBase {
     public:
-        PositionControl(std::shared_ptr<ros::NodeHandle> nh, int id, const std::string pose_topic)
+        PositionControl(std::shared_ptr<ros::NodeHandle> nh, int id, std::string pose_topic)
             : ControllerBase(nh, id, pose_topic),
               _prev_error{0, 0},
               _integral{0, 0}
         {
+
+            std::cout << "done ctor low" << std::endl;
             dynamic_reconfigure::Server<bobi_control::PositionControlConfig>::CallbackType f;
             f = boost::bind(&PositionControl::_config_cb, this, _1, _2);
             _cfg_server.setCallback(f);

@@ -12,12 +12,12 @@ namespace bobi {
 
     class ControllerBase {
     public:
-        ControllerBase(std::shared_ptr<ros::NodeHandle> nh, int id, const std::string pose_topic)
+        ControllerBase(std::shared_ptr<ros::NodeHandle> nh, int id, std::string pose_topic)
             : _nh(nh),
               _ros_dt(0),
               _dt(0),
               _id(id),
-              _pose_topic(_pose_topic)
+              _pose_topic(pose_topic)
         {
             _pose_sub = _nh->subscribe(_pose_topic, 1, &ControllerBase::_pose_cb, this);
             _target_vel_sub = _nh->subscribe("target_velocities", 1, &ControllerBase::_target_velocities_cb, this);
