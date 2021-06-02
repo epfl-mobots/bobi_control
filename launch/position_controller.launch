@@ -1,6 +1,10 @@
 <launch>
     <arg name="ns" default="/" />
+    <arg name="pose_topic" default="naive_poses" />
     <group ns="$(arg ns)">
+        <rosparam>
+            pose_topic: "naive_poses"
+        </rosparam>
         <node name="position_controller_node" pkg="bobi_control" type="position_controller_node" output="screen"/>
     </group>
 </launch>

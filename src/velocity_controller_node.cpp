@@ -12,7 +12,12 @@ int main(int argc, char** argv)
     int id;
     nh->param<int>("robot_id", id, -1);
 
-    VelocityControl ctrl(nh, id);
+    std::string pose_topic;
+    nh->param<std::string>("pose_topic", pose_topic, "naive_poses");
+
+    ROS_INFO("Robot %d controller using %s topic for pose info", id, pose_topic.c_str());
+
+    VelocityControl ctrl(nh, id, pose_topic);
 
     int rate;
     nh->param<int>("rate", rate, 30);

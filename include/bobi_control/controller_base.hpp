@@ -12,13 +12,14 @@ namespace bobi {
 
     class ControllerBase {
     public:
-        ControllerBase(std::shared_ptr<ros::NodeHandle> nh, int id)
+        ControllerBase(std::shared_ptr<ros::NodeHandle> nh, int id, const std::string pose_topic)
             : _nh(nh),
               _ros_dt(0),
               _dt(0),
-              _id(id)
+              _id(id),
+              _pose_topic(_pose_topic)
         {
-            _pose_sub = _nh->subscribe("robot_poses", 1, &ControllerBase::_pose_cb, this);
+            _pose_sub = _nh->subscribe(_pose_topic, 1, &ControllerBase::_pose_cb, this);
             _target_vel_sub = _nh->subscribe("target_velocities", 1, &ControllerBase::_target_velocities_cb, this);
             _target_pos_sub = _nh->subscribe("target_position", 1, &ControllerBase::_target_position_cb, this);
 
@@ -30,6 +31,11 @@ namespace bobi {
         }
 
         virtual void spin_once() = 0;
+
+        const std::string get_pose_topic() const
+        {
+            return _pose_topic;
+        }
 
     protected:
         template <typename T>
@@ -81,6 +87,7 @@ namespace bobi {
 
         std::shared_ptr<ros::NodeHandle> _nh;
         const int _id;
+        const std::string _pose_topic;
 
         ros::Subscriber _target_vel_sub;
         std::mutex _tvel_mtx;
