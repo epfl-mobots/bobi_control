@@ -25,8 +25,8 @@ namespace bobi {
 
             _target_velocities.left = 0.;
             _target_velocities.right = 0.;
-            _target_position.pose.xyz.x = 0.;
-            _target_position.pose.xyz.y = 0.;
+            _target_position.pose.xyz.x = -1;
+            _target_position.pose.xyz.y = -1;
             _target_position.pose.rpy.yaw = 0.;
         }
 

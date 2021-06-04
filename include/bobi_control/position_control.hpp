@@ -36,7 +36,8 @@ namespace bobi {
 
                 auto sigmoid = [](const double& x) { return std::exp(x) / (std::exp(x) + 1); };
 
-                if (euc_distance(_pose, _target_position) < _distance_threshold) {
+                if (euc_distance(_pose, _target_position) < _distance_threshold
+                    || (_target_position.pose.xyz.x < 0 || _target_position.pose.xyz.y < 0)) {
                     _set_vel_pub.publish(bobi_msgs::MotorVelocities());
                     _integral = {0., 0.};
                     _prev_error = {0., 0.};

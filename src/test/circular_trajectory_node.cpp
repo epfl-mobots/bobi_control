@@ -24,7 +24,7 @@ int main(int argc, char** argv)
         waypoints.push_back(wp);
     }
 
-    ros::Rate loop_rate(1);
+    ros::Rate loop_rate(2);
     int iter = 0;
     while (ros::ok()) {
         ROS_INFO("(x=%f, y=%f)", waypoints[iter].pose.xyz.x, waypoints[iter].pose.xyz.y);
