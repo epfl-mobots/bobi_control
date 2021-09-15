@@ -14,8 +14,6 @@ namespace bobi {
               _prev_error{0, 0},
               _integral{0, 0}
         {
-
-            std::cout << "done ctor low" << std::endl;
             dynamic_reconfigure::Server<bobi_control::PositionControlConfig>::CallbackType f;
             f = boost::bind(&PositionControl::_config_cb, this, _1, _2);
             _cfg_server.setCallback(f);
@@ -82,6 +80,7 @@ namespace bobi {
 
                 if (abs(error[1]) > _rotate_in_place_threshold) {
                     v_hat = 0;
+                    _integral[0] = 0;
                     _integral[1] = 0;
                 }
 
