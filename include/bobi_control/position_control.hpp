@@ -12,7 +12,8 @@ namespace bobi {
         PositionControl(std::shared_ptr<ros::NodeHandle> nh, int id, std::string pose_topic)
             : ControllerBase(nh, id, pose_topic),
               _prev_error{0, 0},
-              _integral{0, 0}
+              _integral{0, 0},
+              _rotating(false)
         {
             dynamic_reconfigure::Server<bobi_control::PositionControlConfig>::CallbackType f;
             f = boost::bind(&PositionControl::_config_cb, this, _1, _2);
@@ -32,14 +33,20 @@ namespace bobi {
                     return std::sqrt(std::pow(lpose.pose.xyz.x - rpose.pose.xyz.x, 2.) + std::pow(lpose.pose.xyz.y - rpose.pose.xyz.y, 2.));
                 };
 
-                auto sigmoid = [](const double& x) { return std::exp(x) / (std::exp(x) + 1); };
-
                 if (euc_distance(_pose, _target_position) < _distance_threshold
                     || (_target_position.pose.xyz.x < 0 || _target_position.pose.xyz.y < 0)) {
                     _set_vel_pub.publish(bobi_msgs::MotorVelocities());
                     _integral = {0., 0.};
                     _prev_error = {0., 0.};
+                    _rotating = false;
                     return;
+                }
+
+                if (_target_position.pose.xyz.x != _prev_target.pose.xyz.x
+                    || _target_position.pose.xyz.y != _prev_target.pose.xyz.y) {
+                    _integral = {0., 0.};
+                    _prev_error = {0., 0.};
+                    _rotating = false;
                 }
 
                 double yaw = _pose.pose.rpy.yaw;
@@ -47,15 +54,16 @@ namespace bobi {
                 double vy = ((_pose.pose.xyz.y - _prev_pose.pose.xyz.y) / _dt);
                 double v = std::sqrt(std::pow(vy, 2.) + std::pow(vx, 2.));
                 double w = _angle_to_pipi(_pose.pose.rpy.yaw - _prev_pose.pose.rpy.yaw) / _dt;
-                double l = 0.0451;
+                double l = 0.0451 * 2;
+                double radius = 0.022;
                 double theta = _angle_to_pipi(atan2(_target_position.pose.xyz.y - _pose.pose.xyz.y, _target_position.pose.xyz.x - _pose.pose.xyz.x));
 
-                _current_velocities.left = (2 * v - w * l) / 2;
-                _current_velocities.right = (2 * v + w * l) / 2;
+                _current_velocities.left = (2 * v - w * l) / 2 * radius;
+                _current_velocities.right = (2 * v + w * l) / 2 * radius;
 
                 std::array<double, 2> error;
                 error[0] = euc_distance(_pose, _target_position);
-                error[1] = _angle_to_pipi(theta - yaw);
+                error[1] = _angle_to_pipi(yaw - theta);
 
                 // proportional
                 std::array<double, 2> p;
@@ -79,9 +87,21 @@ namespace bobi {
                 double w_hat = _clip(((p[1] + i[1] + d[1]) / _scaler[1]) / _dt, 1);
 
                 if (abs(error[1]) > _rotate_in_place_threshold) {
-                    v_hat = 0;
-                    _integral[0] = 0;
-                    _integral[1] = 0;
+                    if (!_rotating) {
+                        _rotating = true;
+                        _integral[0] = 0;
+                        _integral[1] = 0;
+                    }
+                    else {
+                        v_hat = 0;
+                    }
+                }
+                else {
+                    if (_rotating) {
+                        _rotating = false;
+                        _integral[0] = 0;
+                        _integral[1] = 0;
+                    }
                 }
 
                 bobi_msgs::MotorVelocities new_velocities;
@@ -96,10 +116,12 @@ namespace bobi {
                     ROS_INFO("Current position(x, y) = (%f, %f)", _pose.pose.xyz.x, _pose.pose.xyz.y);
                     ROS_INFO("New velocities(left, right) = (%f, %f)", new_velocities.left, new_velocities.right);
                     ROS_INFO("New velocities(v, w) = (%f, %f)", v_hat, w_hat);
+                    ROS_INFO("Error(linear, angular) = (%f, %f)", error[0], error[1]);
                 }
 
                 _set_vel_pub.publish(new_velocities);
                 _prev_error = error;
+                _prev_target = _targe_position;
             }
         }
 
@@ -136,6 +158,7 @@ namespace bobi {
         double _distance_threshold;
         double _rotate_in_place_threshold;
         bool _verbose;
+        bool _rotating;
 
         bobi_msgs::PoseStamped _current_position;
         bobi_msgs::MotorVelocities _current_velocities;

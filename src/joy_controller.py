@@ -8,14 +8,15 @@ from bobi_msgs.srv import EnableIR, EnableTemp
 
 class WingmanJoy:
     def __init__(self):
-        rospy.Subscriber("joy_fishbot", Joy, self.joy_cb)
-        self._vel_pub = rospy.Publisher(
-            "set_velocities", MotorVelocities, queue_size=1)
         rospy.wait_for_service('enable_ir')
         rospy.wait_for_service('enable_temp')
 
+        rospy.Subscriber("joy_fishbot", Joy, self.joy_cb)
+        self._vel_pub = rospy.Publisher(
+            "set_velocities", MotorVelocities, queue_size=1)
+
         self._linear_scaler = rospy.get_param('linear_scaler', 0.6)
-        self._angular_scaler = rospy.get_param('angular_scaler', 0.6)
+        self._angular_scaler = rospy.get_param('angular_scaler', 4.0)
         self._l = 0.0451
 
         self._enable_ir = False

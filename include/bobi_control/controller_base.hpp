@@ -65,6 +65,9 @@ namespace bobi {
             std::lock_guard<std::mutex> guard(_pose_mtx);
             assert(_id >= 0);
             assert(_id <= msg->poses.size());
+            if (msg->poses.size() == 0) {
+                return;
+            }
 
             _ros_dt = msg->poses[_id].header.stamp - _prev_stamp;
             _dt = std::max(_ros_dt.toSec(), 1e-6);
