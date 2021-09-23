@@ -15,9 +15,18 @@ int main(int argc, char** argv)
     std::string pose_topic;
     nh->param<std::string>("pose_topic", pose_topic, "naive_poses");
 
+    float wheel_radius;
+    nh->param<float>("wheel_radius", wheel_radius, -1);
+
+    float wheel_distance;
+    nh->param<float>("wheel_distance", wheel_distance, -1);
+
+    assert(wheel_radius > 0);
+    assert(wheel_distance > 0);
+
     ROS_INFO("Robot %d controller using %s topic for pose info", id, pose_topic.c_str());
 
-    PositionControl ctrl(nh, id, pose_topic);
+    PositionControl ctrl(nh, id, pose_topic, wheel_radius, wheel_distance);
 
     int rate;
     nh->param<int>("rate", rate, 30);

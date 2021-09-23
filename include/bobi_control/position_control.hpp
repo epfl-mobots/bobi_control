@@ -9,8 +9,10 @@
 namespace bobi {
     class PositionControl : public ControllerBase {
     public:
-        PositionControl(std::shared_ptr<ros::NodeHandle> nh, int id, std::string pose_topic)
+        PositionControl(std::shared_ptr<ros::NodeHandle> nh, int id, std::string pose_topic, const float wheel_radius, const float wheel_distance)
             : ControllerBase(nh, id, pose_topic),
+              _wheel_radius(wheel_radius),
+              _wheel_distance(wheel_distance),
               _prev_error{0, 0},
               _integral{0, 0},
               _rotating(false)
@@ -54,8 +56,8 @@ namespace bobi {
                 double vy = ((_pose.pose.xyz.y - _prev_pose.pose.xyz.y) / _dt);
                 double v = std::sqrt(std::pow(vy, 2.) + std::pow(vx, 2.));
                 double w = _angle_to_pipi(_pose.pose.rpy.yaw - _prev_pose.pose.rpy.yaw) / _dt;
-                double l = 0.0451 * 2;
-                double radius = 0.022;
+                const float l = _wheel_distance;
+                const float radius = _wheel_radius;
                 double theta = _angle_to_pipi(atan2(_target_position.pose.xyz.y - _pose.pose.xyz.y, _target_position.pose.xyz.x - _pose.pose.xyz.x));
 
                 _current_velocities.left = (2 * v - w * l) / 2 * radius;
@@ -121,7 +123,7 @@ namespace bobi {
 
                 _set_vel_pub.publish(new_velocities);
                 _prev_error = error;
-                _prev_target = _targe_position;
+                _prev_target = _target_position;
             }
         }
 
@@ -158,6 +160,9 @@ namespace bobi {
         double _distance_threshold;
         double _rotate_in_place_threshold;
         bool _verbose;
+
+        const float _wheel_radius;
+        const float _wheel_distance;
         bool _rotating;
 
         bobi_msgs::PoseStamped _current_position;
