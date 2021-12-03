@@ -6,7 +6,7 @@
         <arg name="deadzone" default="0.08" />
 
         <rosparam>
-            linear_scaler: 0.6
+            linear_scaler: 1.0
             angular_scaler: 4.0
         </rosparam>
 
@@ -17,7 +17,7 @@
             <remap from="joy" to="$(arg joy_topic)" />
         </node>
 
-        <node name="joy_controller" pkg="bobi_control" type="joy_controller.py" output="screen"/>
+        <node name="joy_controller" pkg="bobi_control" type="thrustmaster_controller.py" output="screen"/>
 
     </group>
 </launch>
