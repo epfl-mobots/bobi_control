@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(bobi_control)
 
-add_compile_options(-std=c++11)
+add_compile_options(-std=c++17)
 
 find_package(
     catkin REQUIRED COMPONENTS
@@ -38,3 +38,7 @@ add_dependencies(position_controller_node ${catkin_EXPORTED_TARGETS} ${PROJECT_N
 add_executable(circular_trajectory_node src/test/circular_trajectory_node.cpp)
 target_link_libraries(circular_trajectory_node ${catkin_LIBRARIES})
 add_dependencies(circular_trajectory_node ${catkin_EXPORTED_TARGETS} bobi_msgs_generate_messages_cpp)
+
+add_executable(eights_node src/test/eights_node.cpp)
+target_link_libraries(eights_node ${catkin_LIBRARIES})
+add_dependencies(eights_node ${catkin_EXPORTED_TARGETS} bobi_msgs_generate_messages_cpp)

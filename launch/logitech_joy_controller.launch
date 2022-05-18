@@ -7,7 +7,7 @@
 
         <rosparam>
             linear_scaler: 1.0
-            angular_scaler: 4.0
+            angular_scaler: 9.0
         </rosparam>
 
         <node name="joy_node" pkg="joy" type="joy_node">

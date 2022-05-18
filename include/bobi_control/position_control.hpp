@@ -51,10 +51,18 @@ namespace bobi {
                     _rotating = false;
                 }
 
+                if (_pose.pose.xyz.x == _prev_pose.pose.xyz.x
+                    && _pose.pose.xyz.y == _prev_pose.pose.xyz.y
+                    && _prev_v[0] != 0 && _prev_v[1] != 0) {
+                    _pose.pose.xyz.x += _prev_v[0] * _dt;
+                    _pose.pose.xyz.y += _prev_v[1] * _dt;
+                }
+
                 double yaw = _pose.pose.rpy.yaw;
                 double vx = ((_pose.pose.xyz.x - _prev_pose.pose.xyz.x) / _dt);
                 double vy = ((_pose.pose.xyz.y - _prev_pose.pose.xyz.y) / _dt);
                 double v = std::sqrt(std::pow(vy, 2.) + std::pow(vx, 2.));
+                _prev_v = {vx, vy, v};
                 double w = _angle_to_pipi(_pose.pose.rpy.yaw - _prev_pose.pose.rpy.yaw) / _dt;
                 const float l = _wheel_distance;
                 const float radius = _wheel_radius;
@@ -66,6 +74,7 @@ namespace bobi {
                 std::array<double, 2> error;
                 error[0] = euc_distance(_pose, _target_position);
                 error[1] = _angle_to_pipi(yaw - theta);
+                //error[1] = _angle_to_pipi(theta - yaw);
 
                 // proportional
                 std::array<double, 2> p;
@@ -88,7 +97,7 @@ namespace bobi {
                 double v_hat = _clip(((p[0] + i[0] + d[0]) / _scaler[0]) / _dt, 0);
                 double w_hat = _clip(((p[1] + i[1] + d[1]) / _scaler[1]) / _dt, 1);
 
-                if (abs(error[1]) > _rotate_in_place_threshold) {
+                if (abs(error[1]) > _rotate_in_place_threshold_ub) {
                     if (!_rotating) {
                         _rotating = true;
                         _integral[0] = 0;
@@ -99,7 +108,7 @@ namespace bobi {
                     }
                 }
                 else {
-                    if (_rotating) {
+                    if (_rotating && abs(error[1]) <= _rotate_in_place_threshold_lb) {
                         _rotating = false;
                         _integral[0] = 0;
                         _integral[1] = 0;
@@ -138,7 +147,8 @@ namespace bobi {
             _ub = {config.ub_v, config.ub_w};
             _scaler = {config.scaler_v, config.scaler_w};
             _distance_threshold = config.distance_threshold;
-            _rotate_in_place_threshold = config.rotate_in_place_threshold;
+            _rotate_in_place_threshold_ub = config.rotate_in_place_threshold_ub;
+            _rotate_in_place_threshold_lb = config.rotate_in_place_threshold_lb;
             _verbose = config.verbose;
         }
 
@@ -158,7 +168,8 @@ namespace bobi {
         std::array<double, 2> _lb, _ub;
         std::array<double, 2> _scaler;
         double _distance_threshold;
-        double _rotate_in_place_threshold;
+        double _rotate_in_place_threshold_ub;
+        double _rotate_in_place_threshold_lb;
         bool _verbose;
 
         const float _wheel_radius;
@@ -168,6 +179,7 @@ namespace bobi {
         bobi_msgs::PoseStamped _current_position;
         bobi_msgs::MotorVelocities _current_velocities;
         bobi_msgs::PoseStamped _prev_target;
+        std::array<double, 3> _prev_v;
     };
 
 } // namespace bobi
