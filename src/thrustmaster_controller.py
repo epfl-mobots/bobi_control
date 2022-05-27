@@ -15,6 +15,7 @@ class ThrustmasterJoy:
         self._linear_scaler = rospy.get_param('linear_scaler', 1.0)
         self._angular_scaler = rospy.get_param('angular_scaler', 4.0)
         self._l = 0.0451
+        self._mv = None
 
     def joy_cb(self, data):
         mv = MotorVelocities()
@@ -31,19 +32,26 @@ class ThrustmasterJoy:
             w = data.axes[2] * self._angular_scaler
             mv.left = (2. * v - w * self._l) / 2.
             mv.right = (2. * v + w * self._l) / 2.
-            self._vel_pub.publish(mv)
             rospy.loginfo(
                 "Received (v, w) = (%f, %f) | Sending (vl, vr) = (%f, %f)", v, w, mv.left, mv.right)
         else:
             mv.left = 0.
             mv.right = 0.
-            self._vel_pub.publish(mv)
+
+        self._mv = mv
+
+    def spin(self):
+        if self._mv is not None:
+            self._vel_pub.publish(self._mv)
 
 
 def main():
     rospy.init_node('joy_controller')
-    _ = ThrustmasterJoy()
-    rospy.spin()
+    joy = ThrustmasterJoy()
+    rate = rospy.Rate(10)
+    while not rospy.is_shutdown():
+        joy.spin()
+        rate.sleep()
 
 
 if __name__ == '__main__':

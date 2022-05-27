@@ -6,6 +6,11 @@
 #include <dynamic_reconfigure/server.h>
 #include <bobi_control/PositionControlConfig.h>
 
+#include <bobi_msgs/MaxAcceleration.h>
+#include <bobi_msgs/DutyCycle.h>
+
+#include <chrono>
+
 namespace bobi {
     class PositionControl : public ControllerBase {
     public:
@@ -15,7 +20,8 @@ namespace bobi {
               _wheel_distance(wheel_distance),
               _prev_error{0, 0},
               _integral{0, 0},
-              _rotating(false)
+              _rotating(false),
+              _using_robot_motor_feedback(false)
         {
             dynamic_reconfigure::Server<bobi_control::PositionControlConfig>::CallbackType f;
             f = boost::bind(&PositionControl::_config_cb, this, _1, _2);
@@ -23,6 +29,10 @@ namespace bobi {
 
             _set_vel_pub = nh->advertise<bobi_msgs::MotorVelocities>("set_velocities", 1);
             // _set_vel_pub = nh->advertise<bobi_msgs::MotorVelocities>("target_velocities", 1);
+            _cur_vel_sub = nh->subscribe("current_velocities", 1, &PositionControl::_current_vel_cb, this);
+
+            _max_accel_cli = nh->serviceClient<bobi_msgs::MaxAcceleration>("set_max_acceleration");
+            _set_duty_cycle_cli = nh->serviceClient<bobi_msgs::DutyCycle>("set_duty_cycle");
         }
 
         void spin_once()
@@ -68,16 +78,28 @@ namespace bobi {
                 const float radius = _wheel_radius;
                 double theta = _angle_to_pipi(atan2(_target_position.pose.xyz.y - _pose.pose.xyz.y, _target_position.pose.xyz.x - _pose.pose.xyz.x));
 
-                _current_velocities.left = (2 * v - w * l) / 2 * radius;
-                _current_velocities.right = (2 * v + w * l) / 2 * radius;
-
                 std::array<double, 2> error;
                 error[0] = euc_distance(_pose, _target_position);
                 error[1] = _angle_to_pipi(yaw - theta);
-                //error[1] = _angle_to_pipi(theta - yaw);
+
+                if (abs(error[1]) > _rotate_in_place_threshold_ub) {
+                    if (!_rotating) {
+                        _rotating = true;
+                        _integral[0] = 0;
+                        _integral[1] = 0;
+                    }
+                }
+                else {
+                    if (_rotating && abs(error[1]) <= _rotate_in_place_threshold_lb) {
+                        _rotating = false;
+                        _integral[0] = 0;
+                        _integral[1] = 0;
+                    }
+                }
 
                 // proportional
-                std::array<double, 2> p;
+                std::array<double, 2>
+                    p;
                 p[0] = _Kp[0] * error[0];
                 p[1] = _Kp[1] * error[1];
 
@@ -97,46 +119,47 @@ namespace bobi {
                 double v_hat = _clip(((p[0] + i[0] + d[0]) / _scaler[0]) / _dt, 0);
                 double w_hat = _clip(((p[1] + i[1] + d[1]) / _scaler[1]) / _dt, 1);
 
-                if (abs(error[1]) > _rotate_in_place_threshold_ub) {
-                    if (!_rotating) {
-                        _rotating = true;
-                        _integral[0] = 0;
-                        _integral[1] = 0;
-                    }
-                    else {
-                        v_hat = 0;
-                    }
-                }
-                else {
-                    if (_rotating && abs(error[1]) <= _rotate_in_place_threshold_lb) {
-                        _rotating = false;
-                        _integral[0] = 0;
-                        _integral[1] = 0;
-                    }
+                if (_rotating) {
+                    v_hat = 0.;
                 }
 
-                bobi_msgs::MotorVelocities new_velocities;
-                new_velocities.left = (2 * v_hat - w_hat * l) / 2.;
-                new_velocities.right = (2 * v_hat + w_hat * l) / 2.;
+                _new_velocities.left = (2 * v_hat - w_hat * l) / 2.;
+                _new_velocities.right = (2 * v_hat + w_hat * l) / 2.;
 
                 if (_verbose) {
+                    if (!_using_robot_motor_feedback) {
+                        _current_velocities.left = (2 * v - w * l) / 2 * radius;
+                        _current_velocities.right = (2 * v + w * l) / 2 * radius;
+                    }
+                    else {
+                        _using_robot_motor_feedback = false;
+                    }
+                    _prev_v = {vx, vy, v};
+
                     ROS_INFO("--- dt = %f", _dt);
                     ROS_INFO("Current velocities(left, right) = (%f, %f)", _current_velocities.left, _current_velocities.right);
                     ROS_INFO("Current velocities(v, w) = (%f, %f)", v, w);
                     ROS_INFO("Target position(x, y) = (%f, %f)", _target_position.pose.xyz.x, _target_position.pose.xyz.y);
                     ROS_INFO("Current position(x, y) = (%f, %f)", _pose.pose.xyz.x, _pose.pose.xyz.y);
-                    ROS_INFO("New velocities(left, right) = (%f, %f)", new_velocities.left, new_velocities.right);
+                    ROS_INFO("New velocities(left, right) = (%f, %f)", _new_velocities.left, _new_velocities.right);
                     ROS_INFO("New velocities(v, w) = (%f, %f)", v_hat, w_hat);
                     ROS_INFO("Error(linear, angular) = (%f, %f)", error[0], error[1]);
                 }
 
-                _set_vel_pub.publish(new_velocities);
+                _set_vel_pub.publish(_new_velocities);
                 _prev_error = error;
                 _prev_target = _target_position;
             }
         }
 
     protected:
+        void _current_vel_cb(const bobi_msgs::MotorVelocities::ConstPtr& motor_velocities)
+        {
+            _using_robot_motor_feedback = true;
+            _current_velocities.left = motor_velocities->left / 100.;
+            _current_velocities.left = motor_velocities->right / 100.;
+        }
+
         void _config_cb(bobi_control::PositionControlConfig& config, uint32_t level)
         {
             ROS_INFO("Updated %s config", __func__);
@@ -161,6 +184,10 @@ namespace bobi {
 
         dynamic_reconfigure::Server<bobi_control::PositionControlConfig> _cfg_server;
         ros::Publisher _set_vel_pub;
+        ros::Subscriber _cur_vel_sub;
+
+        ros::ServiceClient _max_accel_cli;
+        ros::ServiceClient _set_duty_cycle_cli;
 
         std::array<double, 2> _Kp, _Kd, _Ki;
         std::array<double, 2> _prev_error;
@@ -175,8 +202,10 @@ namespace bobi {
         const float _wheel_radius;
         const float _wheel_distance;
         bool _rotating;
+        bool _using_robot_motor_feedback;
 
         bobi_msgs::PoseStamped _current_position;
+        bobi_msgs::MotorVelocities _new_velocities;
         bobi_msgs::MotorVelocities _current_velocities;
         bobi_msgs::PoseStamped _prev_target;
         std::array<double, 3> _prev_v;
