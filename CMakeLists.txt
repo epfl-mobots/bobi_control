@@ -42,3 +42,7 @@ add_dependencies(circular_trajectory_node ${catkin_EXPORTED_TARGETS} bobi_msgs_g
 add_executable(eights_node src/test/eights_node.cpp)
 target_link_libraries(eights_node ${catkin_LIBRARIES})
 add_dependencies(eights_node ${catkin_EXPORTED_TARGETS} bobi_msgs_generate_messages_cpp)
+
+add_executable(straight_line_node src/test/straight_line_node.cpp)
+target_link_libraries(straight_line_node ${catkin_LIBRARIES})
+add_dependencies(straight_line_node ${catkin_EXPORTED_TARGETS} bobi_msgs_generate_messages_cpp)

@@ -20,17 +20,31 @@ int main(int argc, char** argv)
 
     int num_waypoints = static_cast<int>(2. * M_PI / waypoint_angle);
     std::vector<bobi_msgs::PoseStamped> waypoints;
+    // for (int i = 0; i < num_waypoints; ++i) {
+    //     bobi_msgs::PoseStamped wp;
+    //     wp.pose.xyz.x = radius1 * std::cos(waypoint_angle * i + M_PI / 2) + center[0];
+    //     wp.pose.xyz.y = radius1 * std::sin(waypoint_angle * i + M_PI / 2) + (center[1] - radius1);
+    //     waypoints.push_back(wp);
+    // }
+
+    // for (int i = 0; i < num_waypoints; ++i) {
+    //     bobi_msgs::PoseStamped wp;
+    //     wp.pose.xyz.x = radius2 * std::cos(-waypoint_angle * i + 3 * M_PI / 2) + center[0];
+    //     wp.pose.xyz.y = radius2 * std::sin(-waypoint_angle * i + 3 * M_PI / 2) + (center[1] + radius2);
+    //     waypoints.push_back(wp);
+    // }
+
     for (int i = 0; i < num_waypoints; ++i) {
         bobi_msgs::PoseStamped wp;
-        wp.pose.xyz.x = radius1 * std::cos(waypoint_angle * i + M_PI / 2) + center[0];
-        wp.pose.xyz.y = radius1 * std::sin(waypoint_angle * i + M_PI / 2) + (center[1] - radius1);
+        wp.pose.xyz.x = radius1 * std::cos(waypoint_angle * i) + (center[0] - radius1);
+        wp.pose.xyz.y = radius1 * std::sin(waypoint_angle * i) + center[1];
         waypoints.push_back(wp);
     }
 
     for (int i = 0; i < num_waypoints; ++i) {
         bobi_msgs::PoseStamped wp;
-        wp.pose.xyz.x = radius2 * std::cos(-waypoint_angle * i + 3 * M_PI / 2) + center[0];
-        wp.pose.xyz.y = radius2 * std::sin(-waypoint_angle * i + 3 * M_PI / 2) + (center[1] + radius2);
+        wp.pose.xyz.x = radius2 * std::cos(-waypoint_angle * i + M_PI) + (center[0] + radius2);
+        wp.pose.xyz.y = radius2 * std::sin(-waypoint_angle * i + M_PI) + center[1];
         waypoints.push_back(wp);
     }
 
