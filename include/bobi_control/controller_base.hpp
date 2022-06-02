@@ -17,7 +17,8 @@ namespace bobi {
               _ros_dt(0),
               _dt(0),
               _id(id),
-              _pose_topic(pose_topic)
+              _pose_topic(pose_topic),
+              _prev_stamp(ros::Time::now())
         {
             _pose_sub = _nh->subscribe(_pose_topic, 1, &ControllerBase::_pose_cb, this);
             _target_vel_sub = _nh->subscribe("target_velocities", 1, &ControllerBase::_target_velocities_cb, this);
@@ -30,7 +31,13 @@ namespace bobi {
             _target_position.pose.rpy.yaw = 0.;
         }
 
-        virtual void spin_once() = 0;
+        virtual void spin_once()
+        {
+            auto n = ros::Time::now();
+            _ros_dt = n - _prev_stamp;
+            _dt = std::max(_ros_dt.toSec(), 1e-6);
+            _prev_stamp = n;
+        }
 
         const std::string get_pose_topic() const
         {
@@ -69,9 +76,6 @@ namespace bobi {
                 return;
             }
 
-            _ros_dt = msg->poses[_id].header.stamp - _prev_stamp;
-            _dt = std::max(_ros_dt.toSec(), 1e-6);
-            _prev_stamp = msg->poses[_id].header.stamp;
             _prev_pose = _pose;
             _pose = (*msg).poses[_id];
         }

@@ -37,6 +37,8 @@ namespace bobi {
 
         void spin_once()
         {
+            ControllerBase::spin_once();
+
             if (_prev_stamp > ros::Time(0)) {
                 std::lock_guard<std::mutex> pose_guard(_pose_mtx);
                 std::lock_guard<std::mutex> pos_guard(_tpos_mtx);

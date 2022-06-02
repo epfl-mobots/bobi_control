@@ -29,7 +29,7 @@ int main(int argc, char** argv)
     PositionControl ctrl(nh, id, pose_topic, wheel_radius, wheel_distance);
 
     int rate;
-    nh->param<int>("rate", rate, 30);
+    nh->param<int>("position_control/rate", rate, 30);
     ros::Rate loop_rate(rate);
     while (ros::ok()) {
         ctrl.spin_once();

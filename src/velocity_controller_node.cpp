@@ -20,7 +20,7 @@ int main(int argc, char** argv)
     VelocityControl ctrl(nh, id, pose_topic);
 
     int rate;
-    nh->param<int>("rate", rate, 30);
+    nh->param<int>("velocity_control/rate", rate, 30);
     ros::Rate loop_rate(rate);
     while (ros::ok()) {
         ctrl.spin_once();
