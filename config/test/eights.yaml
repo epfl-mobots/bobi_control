@@ -3,4 +3,5 @@ eights:
   radius1: 0.15
   radius2: 0.15
   center: [0.85, 0.55]
-  rate: 15
+  shift_angle: 0.785
+  rate: 10
