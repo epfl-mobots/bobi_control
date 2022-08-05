@@ -5,6 +5,7 @@
 #include <bobi_msgs/PoseStamped.h>
 #include <bobi_msgs/PoseVec.h>
 #include <bobi_msgs/MotorVelocities.h>
+#include <bobi_msgs/ConvertCoordinates.h>
 
 #include <cassert>
 
@@ -24,6 +25,11 @@ namespace bobi {
             _target_vel_sub = _nh->subscribe("target_velocities", 1, &ControllerBase::_target_velocities_cb, this);
             _target_pos_sub = _nh->subscribe("target_position", 1, &ControllerBase::_target_position_cb, this);
 
+            _bottom2top_srv = _nh->serviceClient<bobi_msgs::ConvertCoordinates>("convert_bottom2top");
+            _top2bottom_srv = _nh->serviceClient<bobi_msgs::ConvertCoordinates>("convert_top2bottom");
+            _bottom2top_srv.waitForExistence();
+            _top2bottom_srv.waitForExistence();
+
             _target_velocities.left = 0.;
             _target_velocities.right = 0.;
             _target_position.pose.xyz.x = -1;
@@ -42,6 +48,30 @@ namespace bobi {
         const std::string get_pose_topic() const
         {
             return _pose_topic;
+        }
+
+        bobi_msgs::PoseStamped convert_top2bottom(const bobi_msgs::PoseStamped& pose)
+        {
+            bobi_msgs::ConvertCoordinates srv;
+            srv.request.p = pose.pose.xyz;
+            _top2bottom_srv.call(srv);
+            bobi_msgs::PoseStamped res;
+            res.header = pose.header;
+            res.pose.xyz = srv.response.converted_p;
+            res.pose.rpy = pose.pose.rpy;
+            return res;
+        }
+
+        bobi_msgs::PoseStamped convert_bottom2top(const bobi_msgs::PoseStamped& pose)
+        {
+            bobi_msgs::ConvertCoordinates srv;
+            srv.request.p = pose.pose.xyz;
+            _bottom2top_srv.call(srv);
+            bobi_msgs::PoseStamped res;
+            res.header = pose.header;
+            res.pose.xyz = srv.response.converted_p;
+            res.pose.rpy = pose.pose.rpy;
+            return res;
         }
 
     protected:
@@ -95,6 +125,9 @@ namespace bobi {
         std::shared_ptr<ros::NodeHandle> _nh;
         const int _id;
         const std::string _pose_topic;
+
+        ros::ServiceClient _top2bottom_srv;
+        ros::ServiceClient _bottom2top_srv;
 
         ros::Subscriber _target_vel_sub;
         std::mutex _tvel_mtx;

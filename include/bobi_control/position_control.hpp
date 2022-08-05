@@ -100,8 +100,7 @@ namespace bobi {
                 }
 
                 // proportional
-                std::array<double, 2>
-                    p;
+                std::array<double, 2> p;
                 p[0] = _Kp[0] * error[0];
                 p[1] = _Kp[1] * error[1];
 
@@ -159,7 +158,7 @@ namespace bobi {
         {
             _using_robot_motor_feedback = true;
             _current_velocities.left = motor_velocities->left / 100.;
-            _current_velocities.left = motor_velocities->right / 100.;
+            _current_velocities.right = motor_velocities->right / 100.;
         }
 
         void _config_cb(bobi_control::PositionControlConfig& config, uint32_t level)

@@ -4,27 +4,32 @@ project(bobi_control)
 add_compile_options(-std=c++17)
 
 find_package(
-    catkin REQUIRED COMPONENTS
-    roscpp
-    rospy
-    geometry_msgs
-    sensor_msgs
-    bobi_msgs
-    dynamic_reconfigure
+  catkin REQUIRED COMPONENTS
+  roscpp
+  rospy
+  geometry_msgs
+  sensor_msgs
+  bobi_msgs
+  dynamic_reconfigure
 )
+find_package(Eigen3 REQUIRED)
 
 generate_dynamic_reconfigure_options(
   config/VelocityController.cfg
   config/PositionController.cfg
+  # config/AstolfiController.cfg
+  config/behaviour/NaiveBurstAndCoast.cfg
 )
 
 catkin_package(
   CATKIN_DEPENDS bobi_msgs
+  DEPENDS EIGEN3
 )
 
 include_directories(
   include
   ${catkin_INCLUDE_DIRS}
+  ${EIGEN3_INCLUDE_DIRS}
 )
 
 add_executable(velocity_controller_node src/velocity_controller_node.cpp)
@@ -34,6 +39,14 @@ add_dependencies(velocity_controller_node ${catkin_EXPORTED_TARGETS} ${PROJECT_N
 add_executable(position_controller_node src/position_controller_node.cpp)
 target_link_libraries(position_controller_node ${catkin_LIBRARIES})
 add_dependencies(position_controller_node ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg bobi_msgs_generate_messages_cpp)
+
+# add_executable(astolfi_controller_node src/astolfi_controller_node.cpp)
+# target_link_libraries(astolfi_controller_node ${catkin_LIBRARIES})
+# add_dependencies(astolfi_controller_node ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg bobi_msgs_generate_messages_cpp)
+
+add_executable(naive_burst_and_coast_node src/behaviour/naive_burst_and_coast.cpp)
+target_link_libraries(naive_burst_and_coast_node ${catkin_LIBRARIES})
+add_dependencies(naive_burst_and_coast_node ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg bobi_msgs_generate_messages_cpp)
 
 add_executable(circular_trajectory_node src/test/circular_trajectory_node.cpp)
 target_link_libraries(circular_trajectory_node ${catkin_LIBRARIES})
