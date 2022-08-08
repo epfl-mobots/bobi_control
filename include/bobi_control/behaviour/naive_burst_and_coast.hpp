@@ -135,6 +135,30 @@ namespace bobi {
 
                     _total_time += _dt;
 
+                    if (euc_distance(_pose, _target_position) < _distance_threshold
+                        || (_target_position.pose.xyz.x < 0 || _target_position.pose.xyz.y < 0) && !_lure_rescue) {
+                        // _set_vel_pub.publish(bobi_msgs::MotorVelocities());
+                        _integral = {0., 0.};
+                        _prev_error = {0., 0.};
+                        _rotating = false;
+                        _t0 = _total_time;
+                        _tau = 0;
+                    }
+
+                    if (_target_position.pose.xyz.x != _prev_target.pose.xyz.x
+                        || _target_position.pose.xyz.y != _prev_target.pose.xyz.y) {
+                        _integral = {0., 0.};
+                        _prev_error = {0., 0.};
+                        _rotating = false;
+                    }
+
+                    if (_pose.pose.xyz.x == _prev_pose.pose.xyz.x
+                        && _pose.pose.xyz.y == _prev_pose.pose.xyz.y
+                        && _prev_v[0] != 0 && _prev_v[1] != 0) {
+                        _pose.pose.xyz.x += _prev_v[0] * _dt;
+                        _pose.pose.xyz.y += _prev_v[1] * _dt;
+                    }
+
                     if (!_individual_poses.size()) {
                         return;
                     }
@@ -161,15 +185,24 @@ namespace bobi {
                         _lure_rescue = false;
                     }
 
+                    double rotate_in_place_threshold_ub;
                     if (!_lure_rescue) {
+                        float r = std::sqrt(_pose_in_cm.pose.xyz.x * _pose_in_cm.pose.xyz.x + _pose_in_cm.pose.xyz.y * _pose_in_cm.pose.xyz.y);
+
+                        if (std::abs(r - _params.radius) <= 2.) {
+                            rotate_in_place_threshold_ub = 0.7;
+                        }
+                        else {
+                            rotate_in_place_threshold_ub = _rotate_in_place_threshold_ub;
+                        }
+
                         if (_total_time >= _t0 + _tau) {
-                            float r = std::sqrt(_pose_in_cm.pose.xyz.x * _pose_in_cm.pose.xyz.x + _pose_in_cm.pose.xyz.y * _pose_in_cm.pose.xyz.y);
 
                             if (!_kick()) {
                                 if ((_speeds[_id] * 100) * _dt + r > _params.radius) {
-                                    _new_velocities.left = 0.08;
-                                    _new_velocities.right = -0.08;
-                                    _set_vel_pub.publish(_new_velocities);
+                                    // _new_velocities.left = 0.1;
+                                    // _new_velocities.right = -0.1;
+                                    // _set_vel_pub.publish(_new_velocities);
                                 }
                                 ++_iters;
                                 return;
@@ -228,7 +261,7 @@ namespace bobi {
                     }
 
                     ROS_INFO("Mean speed: %f", _mean_speed);
-                    _ub[0] = _mean_speed;
+                    // _ub[0] = _mean_speed;
 
                     // // Take care of scale
                     // bool no_publish = false;
@@ -244,44 +277,24 @@ namespace bobi {
                     //     _set_target_pos_pub.publish(_target_position); // ! this is slightly weird to do and it's mostly for the viz
                     // }
 #if 1
-                    if (euc_distance(_pose, _target_position) < _distance_threshold
-                        || (_target_position.pose.xyz.x < 0 || _target_position.pose.xyz.y < 0)) {
-                        _set_vel_pub.publish(bobi_msgs::MotorVelocities());
-                        _integral = {0., 0.};
-                        _prev_error = {0., 0.};
-                        _rotating = false;
-                        return;
-                    }
-
-                    if (_target_position.pose.xyz.x != _prev_target.pose.xyz.x
-                        || _target_position.pose.xyz.y != _prev_target.pose.xyz.y) {
-                        _integral = {0., 0.};
-                        _prev_error = {0., 0.};
-                        _rotating = false;
-                    }
-
-                    if (_pose.pose.xyz.x == _prev_pose.pose.xyz.x
-                        && _pose.pose.xyz.y == _prev_pose.pose.xyz.y
-                        && _prev_v[0] != 0 && _prev_v[1] != 0) {
-                        _pose.pose.xyz.x += _prev_v[0] * _dt;
-                        _pose.pose.xyz.y += _prev_v[1] * _dt;
-                    }
 
                     double yaw = _pose.pose.rpy.yaw;
                     double vx = ((_pose.pose.xyz.x - _prev_pose.pose.xyz.x) / _dt);
                     double vy = ((_pose.pose.xyz.y - _prev_pose.pose.xyz.y) / _dt);
                     double v = std::sqrt(std::pow(vy, 2.) + std::pow(vx, 2.));
                     _prev_v = {vx, vy, v};
+                    double motor_v = std::sqrt(std::pow(_current_velocities.left, 2.) + std::pow(_current_velocities.right, 2.));
                     double w = _angle_to_pipi(_pose.pose.rpy.yaw - _prev_pose.pose.rpy.yaw) / _dt;
                     const float l = _wheel_distance;
                     const float radius = _wheel_radius;
                     double theta = _angle_to_pipi(atan2(_target_position.pose.xyz.y - _pose.pose.xyz.y, _target_position.pose.xyz.x - _pose.pose.xyz.x));
 
                     std::array<double, 2> error;
-                    error[0] = euc_distance(_pose, _target_position);
+                    // error[0] = euc_distance(_pose, _target_position);
+                    error[0] = std::abs(motor_v - _mean_speed);
                     error[1] = _angle_to_pipi(yaw - theta);
 
-                    if (abs(error[1]) > _rotate_in_place_threshold_ub) {
+                    if (abs(error[1]) > rotate_in_place_threshold_ub) {
                         if (!_rotating) {
                             _rotating = true;
                             _integral[0] = 0;
@@ -314,7 +327,9 @@ namespace bobi {
                     d[1] = _Kd[1] * (error[1] - _prev_error[1]) / _dt;
 
                     // clipping values
-                    double v_hat = _clip(((p[0] + i[0] + d[0]) / _scaler[0]) / _dt, 0);
+                    // double v_hat = _clip(((p[0] + i[0] + d[0]) / _scaler[0]) / _dt, 0);
+                    double v_hat = _clip(((p[0] + i[0] + d[0]) / _scaler[0]), 0);
+                    // double v_hat = _clip(_mean_speed, 0);
                     double w_hat = _clip(((p[1] + i[1] + d[1]) / _scaler[1]) / _dt, 1);
 
                     if (_rotating) {
