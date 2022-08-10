@@ -17,6 +17,7 @@ find_package(Eigen3 REQUIRED)
 generate_dynamic_reconfigure_options(
   config/VelocityController.cfg
   config/PositionController.cfg
+  config/LinearSpeedController.cfg
   # config/AstolfiController.cfg
   config/behaviour/NaiveBurstAndCoast.cfg
 )
@@ -39,6 +40,10 @@ add_dependencies(velocity_controller_node ${catkin_EXPORTED_TARGETS} ${PROJECT_N
 add_executable(position_controller_node src/position_controller_node.cpp)
 target_link_libraries(position_controller_node ${catkin_LIBRARIES})
 add_dependencies(position_controller_node ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg bobi_msgs_generate_messages_cpp)
+
+add_executable(linear_speed_controller_node src/linear_speed_controller_node.cpp)
+target_link_libraries(linear_speed_controller_node ${catkin_LIBRARIES})
+add_dependencies(linear_speed_controller_node ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg bobi_msgs_generate_messages_cpp)
 
 # add_executable(astolfi_controller_node src/astolfi_controller_node.cpp)
 # target_link_libraries(astolfi_controller_node ${catkin_LIBRARIES})

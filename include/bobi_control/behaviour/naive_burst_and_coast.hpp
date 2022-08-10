@@ -77,8 +77,6 @@ namespace bobi {
                 : ControllerBase(nh, id, pose_topic),
                   _wheel_radius(wheel_radius),
                   _wheel_distance(wheel_distance),
-                  _prev_error{0, 0},
-                  _integral{0, 0},
                   _rotating(false),
                   _using_robot_motor_feedback(false),
                   _params(params),
@@ -96,9 +94,9 @@ namespace bobi {
 
                 _set_vel_pub = nh->advertise<bobi_msgs::MotorVelocities>("set_velocities", 1);
                 _set_target_pos_pub = nh->advertise<bobi_msgs::PoseStamped>("target_position", 1);
+                _set_target_vel_pub = nh->advertise<bobi_msgs::MotorVelocities>("target_velocities", 1);
                 // _set_vel_pub = nh->advertise<bobi_msgs::MotorVelocities>("target_velocities", 1);
-                _cur_vel_sub = nh->subscribe("current_velocities", 1, &NaiveBurstAndCoast::_current_vel_cb, this);
-                _cur_vel_sub = nh->subscribe("filtered_poses", 1, &NaiveBurstAndCoast::_individual_poses_cb, this);
+                _cur_pose_sub = nh->subscribe("filtered_poses", 1, &NaiveBurstAndCoast::_individual_poses_cb, this);
                 _speed_estimates_sub = nh->subscribe("speed_estimates", 1, &NaiveBurstAndCoast::_speed_estimates_cb, this);
 
                 _max_accel_cli = nh->serviceClient<bobi_msgs::MaxAcceleration>("set_max_acceleration");
@@ -135,29 +133,20 @@ namespace bobi {
 
                     _total_time += _dt;
 
-                    if (euc_distance(_pose, _target_position) < _distance_threshold
+                    if (euc_distance(_pose, _target_position) < 0.015
                         || (_target_position.pose.xyz.x < 0 || _target_position.pose.xyz.y < 0) && !_lure_rescue) {
                         // _set_vel_pub.publish(bobi_msgs::MotorVelocities());
-                        _integral = {0., 0.};
-                        _prev_error = {0., 0.};
                         _rotating = false;
                         _t0 = _total_time;
                         _tau = 0;
                     }
 
-                    if (_target_position.pose.xyz.x != _prev_target.pose.xyz.x
-                        || _target_position.pose.xyz.y != _prev_target.pose.xyz.y) {
-                        _integral = {0., 0.};
-                        _prev_error = {0., 0.};
-                        _rotating = false;
-                    }
-
-                    if (_pose.pose.xyz.x == _prev_pose.pose.xyz.x
-                        && _pose.pose.xyz.y == _prev_pose.pose.xyz.y
-                        && _prev_v[0] != 0 && _prev_v[1] != 0) {
-                        _pose.pose.xyz.x += _prev_v[0] * _dt;
-                        _pose.pose.xyz.y += _prev_v[1] * _dt;
-                    }
+                    // if (_pose.pose.xyz.x == _prev_pose.pose.xyz.x
+                    //     && _pose.pose.xyz.y == _prev_pose.pose.xyz.y
+                    //     && _prev_v[0] != 0 && _prev_v[1] != 0) {
+                    //     _pose.pose.xyz.x += _prev_v[0] * _dt;
+                    //     _pose.pose.xyz.y += _prev_v[1] * _dt;
+                    // }
 
                     if (!_individual_poses.size()) {
                         return;
@@ -169,6 +158,7 @@ namespace bobi {
                     rpose_in_cm.pose.xyz.y -= _setup_center_bottom[1];
                     rpose_in_cm.pose.xyz.x *= 100;
                     rpose_in_cm.pose.xyz.y *= 100;
+                    _traj_pose = _pose_in_cm.pose;
 
                     double lure_vs_robot_dist = euc_distance(_pose_in_cm, rpose_in_cm);
                     if (lure_vs_robot_dist > 2.5) {
@@ -185,26 +175,23 @@ namespace bobi {
                         _lure_rescue = false;
                     }
 
-                    double rotate_in_place_threshold_ub;
                     if (!_lure_rescue) {
                         float r = std::sqrt(_pose_in_cm.pose.xyz.x * _pose_in_cm.pose.xyz.x + _pose_in_cm.pose.xyz.y * _pose_in_cm.pose.xyz.y);
 
-                        if (std::abs(r - _params.radius) <= 2.) {
-                            rotate_in_place_threshold_ub = 0.7;
-                        }
-                        else {
-                            rotate_in_place_threshold_ub = _rotate_in_place_threshold_ub;
-                        }
-
                         if (_total_time >= _t0 + _tau) {
+                            if (_iters > _params.itermax) {
+                                _pose_in_cm.pose.rpy.yaw *= -1;
+                            }
 
                             if (!_kick()) {
-                                if ((_speeds[_id] * 100) * _dt + r > _params.radius) {
+                                if ((_speeds[_id] * 100) * _dt + r > _params.radius || _iters > 2 * _params.itermax) {
                                     // _new_velocities.left = 0.1;
                                     // _new_velocities.right = -0.1;
                                     // _set_vel_pub.publish(_new_velocities);
+                                    _traj_pose.rpy.yaw = -_pose_in_cm.pose.rpy.yaw;
                                 }
                                 ++_iters;
+                                ROS_ERROR("stuck");
                                 return;
                             }
                             else {
@@ -225,7 +212,6 @@ namespace bobi {
                                 _target_position.pose.xyz.x = _pose_in_cm.pose.xyz.x + (_params.radius - r) * cos(_traj_pose.rpy.yaw);
                                 _target_position.pose.xyz.y = _pose_in_cm.pose.xyz.y + (_params.radius - r) * sin(_traj_pose.rpy.yaw);
                                 _mean_speed = std::abs(_params.radius - r) / _tau;
-                                ROS_ERROR(">>> Target position out of bounds");
                             }
                             else {
                                 _target_position = candidate_pose;
@@ -240,7 +226,9 @@ namespace bobi {
                             _target_position.pose.xyz.y += _setup_center_bottom[1]; // offset by center y coordinate
 
                             _target_position.header.stamp = ros::Time::now();
-                            _set_target_pos_pub.publish(_target_position); // ! this is slightly weird to do and it's mostly for the viz
+                            _set_target_pos_pub.publish(_target_position);
+                            _target_velocities.resultant = _mean_speed;
+                            _set_target_vel_pub.publish(_target_velocities);
                         }
                     }
                     else {
@@ -257,123 +245,14 @@ namespace bobi {
                         _target_position.pose.xyz.y += _setup_center_bottom[1]; // offset by center y coordinate
 
                         _target_position.header.stamp = ros::Time::now();
-                        _set_target_pos_pub.publish(_target_position); // ! this is slightly weird to do and it's mostly for the viz
+                        _set_target_pos_pub.publish(_target_position);
+                        _target_velocities.resultant = _mean_speed;
+                        _set_target_vel_pub.publish(_target_velocities);
                     }
-
-                    ROS_INFO("Mean speed: %f", _mean_speed);
-                    // _ub[0] = _mean_speed;
-
-                    // // Take care of scale
-                    // bool no_publish = false;
-
-                    // _mean_speed /= 100.; // speed in m/s
-                    // _target_position.pose.xyz.x /= 100.; // position in m
-                    // _target_position.pose.xyz.y /= 100.; // position in m
-                    // _target_position.pose.xyz.x += _setup_center_bottom[0]; // offset by center x coordinate
-                    // _target_position.pose.xyz.y += _setup_center_bottom[1]; // offset by center y coordinate
-
-                    // _target_position.header.stamp = ros::Time::now();
-                    // if (!no_publish) {
-                    //     _set_target_pos_pub.publish(_target_position); // ! this is slightly weird to do and it's mostly for the viz
-                    // }
-#if 1
-
-                    double yaw = _pose.pose.rpy.yaw;
-                    double vx = ((_pose.pose.xyz.x - _prev_pose.pose.xyz.x) / _dt);
-                    double vy = ((_pose.pose.xyz.y - _prev_pose.pose.xyz.y) / _dt);
-                    double v = std::sqrt(std::pow(vy, 2.) + std::pow(vx, 2.));
-                    _prev_v = {vx, vy, v};
-                    double motor_v = std::sqrt(std::pow(_current_velocities.left, 2.) + std::pow(_current_velocities.right, 2.));
-                    double w = _angle_to_pipi(_pose.pose.rpy.yaw - _prev_pose.pose.rpy.yaw) / _dt;
-                    const float l = _wheel_distance;
-                    const float radius = _wheel_radius;
-                    double theta = _angle_to_pipi(atan2(_target_position.pose.xyz.y - _pose.pose.xyz.y, _target_position.pose.xyz.x - _pose.pose.xyz.x));
-
-                    std::array<double, 2> error;
-                    // error[0] = euc_distance(_pose, _target_position);
-                    error[0] = std::abs(motor_v - _mean_speed);
-                    error[1] = _angle_to_pipi(yaw - theta);
-
-                    if (abs(error[1]) > rotate_in_place_threshold_ub) {
-                        if (!_rotating) {
-                            _rotating = true;
-                            _integral[0] = 0;
-                            _integral[1] = 0;
-                        }
-                    }
-                    else {
-                        if (_rotating && abs(error[1]) <= _rotate_in_place_threshold_lb) {
-                            _rotating = false;
-                            _integral[0] = 0;
-                            _integral[1] = 0;
-                        }
-                    }
-
-                    // proportional
-                    std::array<double, 2> p;
-                    p[0] = _Kp[0] * error[0];
-                    p[1] = _Kp[1] * error[1];
-
-                    // integral
-                    _integral[0] += error[0] * _dt;
-                    _integral[1] += error[1] * _dt;
-                    std::array<double, 2> i;
-                    i[0] = _Ki[0] * _integral[0];
-                    i[1] = _Ki[1] * _integral[1];
-
-                    // derivative
-                    std::array<double, 2> d;
-                    d[0] = _Kd[0] * (error[0] - _prev_error[0]) / _dt;
-                    d[1] = _Kd[1] * (error[1] - _prev_error[1]) / _dt;
-
-                    // clipping values
-                    // double v_hat = _clip(((p[0] + i[0] + d[0]) / _scaler[0]) / _dt, 0);
-                    double v_hat = _clip(((p[0] + i[0] + d[0]) / _scaler[0]), 0);
-                    // double v_hat = _clip(_mean_speed, 0);
-                    double w_hat = _clip(((p[1] + i[1] + d[1]) / _scaler[1]) / _dt, 1);
-
-                    if (_rotating) {
-                        v_hat = 0.;
-                    }
-
-                    _new_velocities.left = (2 * v_hat - w_hat * l) / 2.;
-                    _new_velocities.right = (2 * v_hat + w_hat * l) / 2.;
-
-                    if (_verbose) {
-                        if (!_using_robot_motor_feedback) {
-                            _current_velocities.left = (2 * v - w * l) / 2 * radius;
-                            _current_velocities.right = (2 * v + w * l) / 2 * radius;
-                        }
-                        else {
-                            _using_robot_motor_feedback = false;
-                        }
-                        _prev_v = {vx, vy, v};
-
-                        ROS_INFO("--- dt = %f", _dt);
-                        ROS_INFO("Current velocities(left, right) = (%f, %f)", _current_velocities.left, _current_velocities.right);
-                        ROS_INFO("Current velocities(v, w) = (%f, %f)", v, w);
-                        ROS_INFO("Target position(x, y) = (%f, %f)", _target_position.pose.xyz.x, _target_position.pose.xyz.y);
-                        ROS_INFO("Current position(x, y) = (%f, %f)", _pose.pose.xyz.x, _pose.pose.xyz.y);
-                        ROS_INFO("New velocities(left, right) = (%f, %f)", _new_velocities.left, _new_velocities.right);
-                        ROS_INFO("New velocities(v, w) = (%f, %f)", v_hat, w_hat);
-                        ROS_INFO("Error(linear, angular) = (%f, %f)", error[0], error[1]);
-                    }
-
-                    _set_vel_pub.publish(_new_velocities);
-                    _prev_error = error;
-                    _prev_target = _target_position;
-#endif
                 }
             }
 
         protected:
-            void _current_vel_cb(const bobi_msgs::MotorVelocities::ConstPtr& motor_velocities)
-            {
-                _using_robot_motor_feedback = true;
-                _current_velocities.left = motor_velocities->left / 100.;
-                _current_velocities.right = motor_velocities->right / 100.;
-            }
-
             void _individual_poses_cb(const bobi_msgs::PoseVec::ConstPtr& pose_vec)
             {
                 _individual_poses.clear();
@@ -400,17 +279,6 @@ namespace bobi {
             void _config_cb(bobi_control::NaiveBurstAndCoastConfig& config, uint32_t level)
             {
                 ROS_INFO("Updated %s config", __func__);
-                _Kp = {config.Kp_v, config.Kp_w};
-                _Ki = {config.Ki_v, config.Ki_w};
-                _Kd = {config.Kd_v, config.Kd_w};
-                _lb = {config.lb_v, config.lb_w};
-                _ub = {config.ub_v, config.ub_w};
-                _scaler = {config.scaler_v, config.scaler_w};
-                _distance_threshold = config.distance_threshold;
-                _rotate_in_place_threshold_ub = config.rotate_in_place_threshold_ub;
-                _rotate_in_place_threshold_lb = config.rotate_in_place_threshold_lb;
-                _verbose = config.verbose;
-
                 _params.radius = config.radius * 100;
                 _params.iuturn = config.iuturn;
                 _params.perceived_agents = config.perceived_agents;
@@ -418,7 +286,6 @@ namespace bobi {
                 _params.gamma_wall = config.gamma_wall;
                 _params.gamma_sym = config.gamma_sym;
                 _params.gamma_asym = config.gamma_asym;
-                _params.wall_interaction_range = config.wall_interaction_range;
                 _params.dw = config.dw;
                 _params.dc = config.dc;
                 _params.gamma_attraction = config.gamma_attraction;
@@ -436,31 +303,20 @@ namespace bobi {
                 _params.itermax = config.itermax;
             }
 
-            double _clip(double val, size_t idx)
-            {
-                val = std::min(val, _ub[idx]);
-                val = std::max(val, _lb[idx]);
-                return val;
-            }
-
             dynamic_reconfigure::Server<bobi_control::NaiveBurstAndCoastConfig> _cfg_server;
             ros::Publisher _set_vel_pub;
             ros::Publisher _set_target_pos_pub;
-            ros::Subscriber _cur_vel_sub;
+            ros::Publisher _set_target_vel_pub;
+            ros::Subscriber _cur_pose_sub;
             ros::Subscriber _individual_poses_sub;
             ros::Subscriber _speed_estimates_sub;
 
             ros::ServiceClient _max_accel_cli;
             ros::ServiceClient _set_duty_cycle_cli;
 
-            std::array<double, 2> _Kp, _Kd, _Ki;
-            std::array<double, 2> _prev_error;
-            std::array<double, 2> _integral;
-            std::array<double, 2> _lb, _ub;
             std::array<double, 2> _scaler;
             std::array<double, 2> _setup_center_top;
             std::array<double, 2> _setup_center_bottom;
-            double _distance_threshold;
             double _rotate_in_place_threshold_ub;
             double _rotate_in_place_threshold_lb;
             bool _verbose;
@@ -495,6 +351,7 @@ namespace bobi {
                 }
                 float v0old = speed_in_cm;
                 float vold = speed_in_cm * std::exp(-_tau / _params.tau0);
+                _traj_pose.rpy.yaw = _pose_in_cm.pose.rpy.yaw;
 
                 auto state = _compute_state();
                 auto neighs = _sort_neighbours(std::get<0>(state), _id, Order::INCREASING); // by distance
@@ -548,7 +405,7 @@ namespace bobi {
 
                 // cognitive noise
                 float gauss = std::sqrt(-2. * log(ran3())) * cos(2 * M_PI * ran3());
-                phi_new = _pose_in_cm.pose.rpy.yaw + dphi_int + _params.gamma_rand * gauss * (1. - _params.alpha_w * fw);
+                phi_new = _traj_pose.rpy.yaw + dphi_int + _params.gamma_rand * gauss * (1. - _params.alpha_w * fw);
                 float dl = _speed * _params.tau0 * (1. - std::exp(-_tau / _params.tau0)) + _params.dc;
                 float x_new = _pose_in_cm.pose.xyz.x + dl * std::cos(phi_new);
                 float y_new = _pose_in_cm.pose.xyz.y + dl * std::sin(phi_new);
@@ -614,8 +471,6 @@ namespace bobi {
                 float dphiw = 0.;
                 float fw;
 
-                _traj_pose.rpy.yaw = _pose_in_cm.pose.rpy.yaw;
-
                 for (int j : neighs) {
                     auto neigh = _individual_poses[j];
 
@@ -624,16 +479,15 @@ namespace bobi {
                     float psi_ji = abs(_angle_to_pipi(std::get<2>(state)[j]));
                     float dphi_ij = abs(_angle_to_pipi(std::get<3>(state)[j]));
 
-                    // !!! fix this
-                    // if (
-                    //     neighs.size() == 1 && _params.iuturn
-                    //     && psi_ij < _params.psi_c
-                    //     && psi_ji < _params.psi_c
-                    //     && dij < _params.duturn) {
+                    if (
+                        neighs.size() == 1 && _params.iuturn
+                        && psi_ij < _params.psi_c
+                        && psi_ji < _params.psi_c
+                        && dij < _params.duturn) {
 
-                    //     ++_num_uturn;
-                    //     _pose.yaw = neigh->kick_pose().yaw;
-                    // }
+                        ++_num_uturn;
+                        _traj_pose.rpy.yaw = neigh.pose.rpy.yaw;
+                    }
 
                     // wall interaction
                     float theta_w = _angle_to_pipi(_pose_in_cm.pose.rpy.yaw - theta);
