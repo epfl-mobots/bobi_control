@@ -178,6 +178,8 @@ class DLI:
         self._distance_inputs = rospy.get_param(
             'dl_interaction/distance_inputs', True)
         self._rate = rospy.get_param("dl_interaction/rate", 8.3)
+        self._lost_count_thres = rospy.get_param(
+            "dl_interaction/lost_count_thres", 5)
         self._always_current_pos = rospy.get_param(
             'dl_interaction/always_current_pos', True)
         self._id = rospy.get_param(
@@ -430,7 +432,7 @@ class DLI:
             self._lure_lost_count += 0
             self._lure_rescue = False
 
-        if self._lure_lost_count > 5:
+        if self._lure_lost_count > self._lost_count_thres:
             self._lure_rescue = True
 
 
