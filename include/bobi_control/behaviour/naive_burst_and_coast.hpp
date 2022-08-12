@@ -53,6 +53,8 @@ namespace bobi {
                 float taumin = 0.2;
                 float tau0 = 0.8;
 
+                bool reset_current_pose = false;
+
                 // simu
                 int itermax = 10;
             };
@@ -85,7 +87,9 @@ namespace bobi {
                   _setup_center_bottom{0., 0.},
                   _iters(0),
                   _lure_rescue(false),
-                  _mean_speed(0.)
+                  _mean_speed(0.),
+                  _always_current_pos(false),
+                  _reset_current_pose(true)
             {
                 // Initialize ROS interface
                 dynamic_reconfigure::Server<bobi_control::NaiveBurstAndCoastConfig>::CallbackType f;
@@ -160,10 +164,11 @@ namespace bobi {
                     rpose_in_cm.pose.xyz.y *= 100;
                     _traj_pose = _pose_in_cm.pose;
 
-                    double lure_vs_robot_dist = euc_distance(_pose_in_cm, rpose_in_cm);
+                    double lure_vs_robot_dist = euc_distance(_last_lure_pose_in_cm, rpose_in_cm);
                     if (lure_vs_robot_dist > 2.5) {
                         ROS_INFO("Rescuing the lure");
                         _lure_rescue = true;
+                        _reset_current_pose = true;
                     }
 
                     if (lure_vs_robot_dist < 0.5) {
@@ -173,6 +178,7 @@ namespace bobi {
                             _tau = 0;
                         }
                         _lure_rescue = false;
+                        _reset_current_pose = _params.reset_current_pose;
                     }
 
                     if (!_lure_rescue) {
@@ -191,7 +197,7 @@ namespace bobi {
                                     _traj_pose.rpy.yaw = -_pose_in_cm.pose.rpy.yaw;
                                 }
                                 ++_iters;
-                                ROS_ERROR("stuck");
+                                _reset_current_pose = true;
                                 return;
                             }
                             else {
@@ -217,6 +223,7 @@ namespace bobi {
                                 _target_position = candidate_pose;
                             }
                             _target_position.pose.rpy.yaw = _traj_pose.rpy.yaw;
+                            _prev_pose_in_cm = _target_position;
 
                             // Take care of scale
                             _mean_speed /= 100.; // speed in m/s
@@ -233,6 +240,8 @@ namespace bobi {
                     }
                     else {
                         _target_position = _pose_in_cm;
+                        _prev_pose_in_cm = _target_position;
+
                         _mean_speed = 4;
                         _t0 = _total_time;
                         _tau = 0;
@@ -263,7 +272,20 @@ namespace bobi {
                     pose.pose.xyz.y -= _setup_center_bottom[1];
                     pose.pose.xyz.x *= 100;
                     pose.pose.xyz.y *= 100;
-                    _individual_poses.push_back(pose);
+                    if (_id == i) {
+                        _last_lure_pose_in_cm = pose;
+
+                        if (_reset_current_pose) {
+                            _individual_poses.push_back(pose);
+                            _reset_current_pose = false;
+                        }
+                        else {
+                            _individual_poses.push_back(_prev_pose_in_cm);
+                        }
+                    }
+                    else {
+                        _individual_poses.push_back(pose);
+                    }
                 }
             }
 
@@ -322,6 +344,8 @@ namespace bobi {
             bool _verbose;
             bool _lure_rescue;
             float _mean_speed;
+            bool _always_current_pos;
+            bool _reset_current_pose;
 
             const float _wheel_radius;
             const float _wheel_distance;
@@ -329,6 +353,8 @@ namespace bobi {
             bool _using_robot_motor_feedback;
 
             bobi_msgs::PoseStamped _pose_in_cm;
+            bobi_msgs::PoseStamped _prev_pose_in_cm;
+            bobi_msgs::PoseStamped _last_lure_pose_in_cm;
             bobi_msgs::MotorVelocities _new_velocities;
             bobi_msgs::MotorVelocities _current_velocities;
             bobi_msgs::PoseStamped _prev_target;
