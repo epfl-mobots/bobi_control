@@ -165,7 +165,7 @@ namespace bobi {
                     _traj_pose = _pose_in_cm.pose;
 
                     double lure_vs_robot_dist = euc_distance(_last_lure_pose_in_cm, rpose_in_cm);
-                    if (lure_vs_robot_dist > 2.5) {
+                    if (lure_vs_robot_dist > 5.) {
                         ROS_INFO("Rescuing the lure");
                         _lure_rescue = true;
                         _reset_current_pose = true;

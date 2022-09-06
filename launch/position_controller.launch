@@ -4,7 +4,7 @@
         <rosparam>
             pose_topic: "robot_poses"
             wheel_radius: 0.01
-            wheel_distance: 0.0451
+            wheel_distance: 0.0441
         </rosparam>
 
         <!-- Thymio values -->
