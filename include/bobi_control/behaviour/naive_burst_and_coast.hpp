@@ -10,6 +10,7 @@
 #include <bobi_msgs/Pose.h>
 #include <bobi_msgs/PoseVec.h>
 #include <bobi_msgs/SpeedEstimateVec.h>
+#include <bobi_msgs/KickSpecs.h>
 
 #include <tools/random/random_generator.hpp>
 
@@ -99,6 +100,8 @@ namespace bobi {
                 _set_vel_pub = nh->advertise<bobi_msgs::MotorVelocities>("set_velocities", 1);
                 _set_target_pos_pub = nh->advertise<bobi_msgs::PoseStamped>("target_position", 1);
                 _set_target_vel_pub = nh->advertise<bobi_msgs::MotorVelocities>("target_velocities", 1);
+                _kick_specs_pub = nh->advertise<bobi_msgs::KickSpecs>("kick_specs", 1);
+
                 // _set_vel_pub = nh->advertise<bobi_msgs::MotorVelocities>("target_velocities", 1);
                 _cur_pose_sub = nh->subscribe("filtered_poses", 1, &NaiveBurstAndCoast::_individual_poses_cb, this);
                 _speed_estimates_sub = nh->subscribe("speed_estimates", 1, &NaiveBurstAndCoast::_speed_estimates_cb, this);
@@ -153,6 +156,7 @@ namespace bobi {
                     // }
 
                     if (!_individual_poses.size()) {
+                        ROS_ERROR("No agent information");
                         return;
                     }
 
@@ -182,11 +186,18 @@ namespace bobi {
                     }
 
                     if (!_lure_rescue) {
+
                         float r = std::sqrt(_pose_in_cm.pose.xyz.x * _pose_in_cm.pose.xyz.x + _pose_in_cm.pose.xyz.y * _pose_in_cm.pose.xyz.y);
 
                         if (_total_time >= _t0 + _tau) {
                             if (_iters > _params.itermax) {
                                 _pose_in_cm.pose.rpy.yaw *= -1;
+                            }
+
+                            if (!_speeds.size()) {
+                                for (size_t i = 0; _individual_poses.size(); ++i) {
+                                    _speeds.push_back(_params.vmin);
+                                }
                             }
 
                             if (!_kick()) {
@@ -196,6 +207,7 @@ namespace bobi {
                                     // _set_vel_pub.publish(_new_velocities);
                                     _traj_pose.rpy.yaw = -_pose_in_cm.pose.rpy.yaw;
                                 }
+
                                 ++_iters;
                                 _reset_current_pose = true;
                                 return;
@@ -215,8 +227,8 @@ namespace bobi {
                             float r_new = std::sqrt(candidate_pose.pose.xyz.x * candidate_pose.pose.xyz.x + candidate_pose.pose.xyz.y * candidate_pose.pose.xyz.y);
 
                             if (r_new > _params.radius) {
-                                _target_position.pose.xyz.x = _pose_in_cm.pose.xyz.x + (_params.radius - r) * cos(_traj_pose.rpy.yaw);
-                                _target_position.pose.xyz.y = _pose_in_cm.pose.xyz.y + (_params.radius - r) * sin(_traj_pose.rpy.yaw);
+                                _target_position.pose.xyz.x = _pose_in_cm.pose.xyz.x + 0.96 * (_params.radius - r) * cos(_traj_pose.rpy.yaw);
+                                _target_position.pose.xyz.y = _pose_in_cm.pose.xyz.y + 0.96 * (_params.radius - r) * sin(_traj_pose.rpy.yaw);
                                 _mean_speed = std::abs(_params.radius - r) / _tau;
                             }
                             else {
@@ -231,6 +243,15 @@ namespace bobi {
                             _target_position.pose.xyz.y /= 100.; // position in m
                             _target_position.pose.xyz.x += _setup_center_bottom[0]; // offset by center x coordinate
                             _target_position.pose.xyz.y += _setup_center_bottom[1]; // offset by center y coordinate
+
+                            // store the kick specs for logs (and control?)
+                            bobi_msgs::KickSpecs kick_specs;
+                            kick_specs.dl = dl;
+                            kick_specs.dphi = _angle_to_pipi(_target_position.pose.rpy.yaw - _individual_poses[_id].pose.rpy.yaw);
+                            kick_specs.phi = _target_position.pose.rpy.yaw;
+                            kick_specs.tau = _tau;
+                            kick_specs.tau0 = _params.tau0;
+                            _kick_specs_pub.publish(kick_specs);
 
                             _target_position.header.stamp = ros::Time::now();
                             _set_target_pos_pub.publish(_target_position);
@@ -302,6 +323,7 @@ namespace bobi {
             {
                 ROS_INFO("Updated %s config", __func__);
                 _params.radius = config.radius * 100;
+                _params.alpha_w = config.alpha_w;
                 _params.iuturn = config.iuturn;
                 _params.perceived_agents = config.perceived_agents;
                 _params.gamma_rand = config.gamma_rand;
@@ -323,12 +345,14 @@ namespace bobi {
                 _params.taumin = config.taumin;
                 _params.tau0 = config.tau0;
                 _params.itermax = config.itermax;
+                _params.reset_current_pose = config.reset_current_pose;
             }
 
             dynamic_reconfigure::Server<bobi_control::NaiveBurstAndCoastConfig> _cfg_server;
             ros::Publisher _set_vel_pub;
             ros::Publisher _set_target_pos_pub;
             ros::Publisher _set_target_vel_pub;
+            ros::Publisher _kick_specs_pub;
             ros::Subscriber _cur_pose_sub;
             ros::Subscriber _individual_poses_sub;
             ros::Subscriber _speed_estimates_sub;
