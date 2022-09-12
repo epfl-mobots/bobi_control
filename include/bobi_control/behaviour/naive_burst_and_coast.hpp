@@ -190,17 +190,19 @@ namespace bobi {
                         float r = std::sqrt(_pose_in_cm.pose.xyz.x * _pose_in_cm.pose.xyz.x + _pose_in_cm.pose.xyz.y * _pose_in_cm.pose.xyz.y);
 
                         if (_total_time >= _t0 + _tau) {
+
                             if (_iters > _params.itermax) {
                                 _pose_in_cm.pose.rpy.yaw *= -1;
                             }
 
-                            if (!_speeds.size()) {
-                                for (size_t i = 0; _individual_poses.size(); ++i) {
+                            if (_speeds.size() == 0) {
+                                for (size_t i = 0; i < _individual_poses.size(); ++i) {
                                     _speeds.push_back(_params.vmin);
                                 }
                             }
 
                             if (!_kick()) {
+
                                 if ((_speeds[_id] * 100) * _dt + r > _params.radius || _iters > 2 * _params.itermax) {
                                     // _new_velocities.left = 0.1;
                                     // _new_velocities.right = -0.1;
@@ -213,6 +215,7 @@ namespace bobi {
                                 return;
                             }
                             else {
+
                                 _t0 = _total_time;
                                 _iters = 0;
                             }
@@ -227,9 +230,10 @@ namespace bobi {
                             float r_new = std::sqrt(candidate_pose.pose.xyz.x * candidate_pose.pose.xyz.x + candidate_pose.pose.xyz.y * candidate_pose.pose.xyz.y);
 
                             if (r_new > _params.radius) {
-                                _target_position.pose.xyz.x = _pose_in_cm.pose.xyz.x + 0.96 * (_params.radius - r) * cos(_traj_pose.rpy.yaw);
-                                _target_position.pose.xyz.y = _pose_in_cm.pose.xyz.y + 0.96 * (_params.radius - r) * sin(_traj_pose.rpy.yaw);
-                                _mean_speed = std::abs(_params.radius - r) / _tau;
+                                float coef = 0.96;
+                                _target_position.pose.xyz.x = _pose_in_cm.pose.xyz.x + coef * (_params.radius - r) * cos(_traj_pose.rpy.yaw);
+                                _target_position.pose.xyz.y = _pose_in_cm.pose.xyz.y + coef * (_params.radius - r) * sin(_traj_pose.rpy.yaw);
+                                _mean_speed = coef * std::abs(_params.radius - r) / _tau;
                             }
                             else {
                                 _target_position = candidate_pose;
@@ -246,6 +250,23 @@ namespace bobi {
 
                             // store the kick specs for logs (and control?)
                             bobi_msgs::KickSpecs kick_specs;
+                            kick_specs.agent = _individual_poses[_id];
+                            kick_specs.agent.pose.xyz.x /= 100.; // position in m
+                            kick_specs.agent.pose.xyz.y /= 100.; // position in m
+                            kick_specs.agent.pose.xyz.x += _setup_center_bottom[0]; // offset by center x coordinate
+                            kick_specs.agent.pose.xyz.y += _setup_center_bottom[1]; // offset by center y coordinate
+                            kick_specs.neighs.poses.resize(_individual_poses.size() - _id - 1);
+                            for (size_t i = 0; i < kick_specs.neighs.poses.size(); ++i) {
+                                bobi_msgs::PoseStamped p;
+                                p.header = _individual_poses[i + _id + 1].header;
+                                p.pose.rpy.yaw = _individual_poses[i + _id + 1].pose.rpy.yaw;
+                                p.pose.xyz.x = _individual_poses[i + _id + 1].pose.xyz.x / 100.; // position in m
+                                p.pose.xyz.y = _individual_poses[i + _id + 1].pose.xyz.y / 100.; // position in m
+                                p.pose.xyz.x += _setup_center_bottom[0]; // offset by center x coordinate
+                                p.pose.xyz.y += _setup_center_bottom[1]; // offset by center y coordinate
+                            }
+                            kick_specs.target_x = _target_position.pose.xyz.x;
+                            kick_specs.target_y = _target_position.pose.xyz.y;
                             kick_specs.dl = dl;
                             kick_specs.dphi = _angle_to_pipi(_target_position.pose.rpy.yaw - _individual_poses[_id].pose.rpy.yaw);
                             kick_specs.phi = _target_position.pose.rpy.yaw;
