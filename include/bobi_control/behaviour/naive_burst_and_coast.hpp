@@ -167,11 +167,14 @@ namespace bobi {
                     rpose_bot.pose.xyz.y -= _setup_center_bottom[1];
                     rpose_bot.pose.xyz.x *= 100;
                     rpose_bot.pose.xyz.y *= 100;
+                    _traj_pose = _pose_in_cm.pose;
 
                     double lure_vs_robot_dist = euc_distance(_pose_in_cm, rpose_bot);
-                    if (lure_vs_robot_dist > 6.5) {
+                    if (lure_vs_robot_dist > 8.5) {
                         ROS_INFO("Rescuing the lure");
-                        _lure_rescue = true;
+                        if (!_params.reset_current_pose) {
+                            // _lure_rescue = true;
+                        }
                         _reset_current_pose = true;
                     }
 
@@ -188,7 +191,7 @@ namespace bobi {
                     if (!_lure_rescue) {
                         float r = std::sqrt(_pose_in_cm.pose.xyz.x * _pose_in_cm.pose.xyz.x + _pose_in_cm.pose.xyz.y * _pose_in_cm.pose.xyz.y);
 
-                        if (_total_time >= _t0 + _tau - _dt) {
+                        if (_total_time >= _t0 + _tau) {
 
                             if (_iters > _params.itermax) {
                                 _pose_in_cm.pose.rpy.yaw *= -1;
@@ -225,13 +228,13 @@ namespace bobi {
 
                             float expt = std::exp(-_tau / _params.tau0);
                             float dl = _speed * _params.tau0 * (1. - expt) + _params.dc;
-                            candidate_pose.pose.xyz.x = _pose_in_cm.pose.xyz.x + dl * cos(_pose_in_cm.pose.rpy.yaw);
-                            candidate_pose.pose.xyz.y = _pose_in_cm.pose.xyz.y + dl * sin(_pose_in_cm.pose.rpy.yaw);
+                            candidate_pose.pose.xyz.x = _pose_in_cm.pose.xyz.x + dl * cos(_traj_pose.rpy.yaw);
+                            candidate_pose.pose.xyz.y = _pose_in_cm.pose.xyz.y + dl * sin(_traj_pose.rpy.yaw);
                             _mean_speed = dl / _tau;
                             float r_new = std::sqrt(candidate_pose.pose.xyz.x * candidate_pose.pose.xyz.x + candidate_pose.pose.xyz.y * candidate_pose.pose.xyz.y);
 
                             _target_position = candidate_pose;
-                            _target_position.pose.rpy.yaw = _pose_in_cm.pose.rpy.yaw;
+                            _target_position.pose.rpy.yaw = _traj_pose.rpy.yaw;
                             _prev_pose_in_cm = _target_position;
 
                             // Take care of scale
@@ -248,8 +251,8 @@ namespace bobi {
                             kick_specs.agent.pose.xyz.y /= 100.; // position in m
                             kick_specs.agent.pose.xyz.x += _setup_center_bottom[0]; // offset by center x coordinate
                             kick_specs.agent.pose.xyz.y += _setup_center_bottom[1]; // offset by center y coordinate
-                            kick_specs.neighs.poses.resize(_individual_poses.size() - _id - 1);
-                            for (size_t i = 0; i < kick_specs.neighs.poses.size(); ++i) {
+                            // kick_specs.neighs.poses.resize(_individual_poses.size() - _id - 1);
+                            for (size_t i = 0; i < _individual_poses.size() - _id - 1; ++i) {
                                 bobi_msgs::PoseStamped p;
                                 p.header = _individual_poses[i + _id + 1].header;
                                 p.pose.rpy.yaw = _individual_poses[i + _id + 1].pose.rpy.yaw;
@@ -257,6 +260,7 @@ namespace bobi {
                                 p.pose.xyz.y = _individual_poses[i + _id + 1].pose.xyz.y / 100.; // position in m
                                 p.pose.xyz.x += _setup_center_bottom[0]; // offset by center x coordinate
                                 p.pose.xyz.y += _setup_center_bottom[1]; // offset by center y coordinate
+                                kick_specs.neighs.poses.push_back(p);
                             }
                             kick_specs.target_x = _target_position.pose.xyz.x;
                             kick_specs.target_y = _target_position.pose.xyz.y;
@@ -411,26 +415,30 @@ namespace bobi {
                 }
                 float v0old = speed_in_cm;
                 float vold = speed_in_cm * std::exp(-_tau / _params.tau0);
+                _traj_pose.rpy.yaw = _pose_in_cm.pose.rpy.yaw;
 
                 auto state = _compute_state();
                 auto neighs = _sort_neighbours(std::get<0>(state), _id, Order::INCREASING); // by distance
 
-                // auto neigh = _individual_poses[j];
+                for (int j : neighs) {
+                    auto neigh = _individual_poses[j];
 
-                // float dij = std::get<0>(state)[j];
-                // float psi_ij = abs(_angle_to_pipi(std::get<1>(state)[j]));
-                // float psi_ji = abs(_angle_to_pipi(std::get<2>(state)[j]));
-                // float dphi_ij = abs(_angle_to_pipi(std::get<3>(state)[j]));
+                    float dij = std::get<0>(state)[j];
+                    float psi_ij = abs(_angle_to_pipi(std::get<1>(state)[j]));
+                    float psi_ji = abs(_angle_to_pipi(std::get<2>(state)[j]));
+                    float dphi_ij = abs(_angle_to_pipi(std::get<3>(state)[j]));
 
-                // if (
-                //     neighs.size() == 1 && _params.iuturn
-                //     && psi_ij < _params.psi_c
-                //     && psi_ji < _params.psi_c
-                //     && dij < _params.duturn) {
+                    if (
+                        neighs.size() == 1 && _params.iuturn
+                        && psi_ij < _params.psi_c
+                        && psi_ji < _params.psi_c
+                        && dij < _params.duturn) {
 
-                //     ++_num_uturn;
-                //     _pose_in_cm.pose.rpy.yaw = neigh.pose.rpy.yaw;
-                // }
+                        ++_num_uturn;
+                        _traj_pose.rpy.yaw = neigh.pose.rpy.yaw;
+                        break;
+                    }
+                }
 
                 float dphi_int, fw;
                 std::tie(dphi_int, fw) = _compute_interactions(state, neighs);
@@ -481,7 +489,7 @@ namespace bobi {
 
                 // cognitive noise
                 float gauss = std::sqrt(-2. * log(ran3())) * cos(2 * M_PI * ran3());
-                phi_new = _pose_in_cm.pose.rpy.yaw + dphi_int + _params.gamma_rand * gauss * (1. - _params.alpha_w * fw);
+                phi_new = _traj_pose.rpy.yaw + dphi_int + _params.gamma_rand * gauss * (1. - _params.alpha_w * fw);
                 float dl = _speed * _params.tau0 * (1. - std::exp(-_tau / _params.tau0)) + _params.dc;
                 float x_new = _pose_in_cm.pose.xyz.x + dl * std::cos(phi_new);
                 float y_new = _pose_in_cm.pose.xyz.y + dl * std::sin(phi_new);
@@ -491,7 +499,7 @@ namespace bobi {
                     _speed /= 2.;
                 }
 
-                _pose_in_cm.pose.rpy.yaw = _angle_to_pipi(phi_new);
+                _traj_pose.rpy.yaw = _angle_to_pipi(phi_new);
 
                 if (r_new > _params.radius) {
                     _tau = 0;
@@ -612,6 +620,7 @@ namespace bobi {
             float _t0;
             float _tau;
             float _speed;
+            bobi_msgs::Pose _traj_pose;
         }; // namespace behaviour
 
     } // namespace behaviour
