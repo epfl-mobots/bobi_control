@@ -128,9 +128,9 @@ namespace bobi {
 
                 // clipping values
                 // double v_hat = _clip(((p[0] + i[0] + d[0]) / _scaler[0]) / _dt, 0);
-                double v_hat = _clip(((p[0] + i[0] + d[0]) / _scaler[0]), 0);
+                double v_hat = _clip(((p[0] + i[0] + d[0]) * _scaler[0]), 0);
                 // double v_hat = _clip(_mean_speed, 0);
-                double w_hat = _clip(((p[1] + i[1] + d[1]) / _scaler[1]) / _dt, 1);
+                double w_hat = _clip(((p[1] + i[1] + d[1]) * _scaler[1]) / _dt, 1);
 
                 if (_rotating) {
                     v_hat = 0.;
