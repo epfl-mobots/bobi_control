@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import rospy
-from bobi_msgs.msg import PoseVec, PoseStamped, MotorVelocities
+from bobi_msgs.msg import PoseVec, PoseStamped, MotorVelocities, DLISpecs
 from bobi_msgs.srv import ConvertCoordinates
 from geometry_msgs.msg import Point
 
@@ -189,8 +189,8 @@ class DLI:
         self._model = self._load_keras_model(self._model_path)
         self._individual_poses = None
         self._individual_velocities = None
-        self._dt = 1e-3
-        self._var_coef = 0.68
+        self._dt = 1 / self._rate
+        self._var_coef = 0.006
 
         self._prev_target = None
         self._lure_rescue = False
@@ -213,13 +213,15 @@ class DLI:
         self._prev_stamp = rospy.Time.now()
         self._fp_sub = rospy.Subscriber(
             'dl_interaction/filtered_poses_drop', PoseVec, self._filtered_poses_cb)
-        self._fp_sub = rospy.Subscriber(
+        self._rp_sub = rospy.Subscriber(
             'dl_interaction/robot_poses_drop', PoseVec, self._robot_poses_cb)
 
         self._target_p_pub = rospy.Publisher(
             'target_position', PoseStamped, queue_size=1)
         self._target_v_pub = rospy.Publisher(
             'target_velocities', MotorVelocities, queue_size=1)
+        self._dli_spec_pub = rospy.Publisher(
+            'dli_specs', DLISpecs, queue_size=1)
 
         rospy.wait_for_service('convert_bottom2top')
         rospy.wait_for_service('convert_top2bottom')
@@ -262,7 +264,7 @@ class DLI:
             return
         start = rospy.Time.now()
 
-        new_p, new_v, valid = self.__call__(self._id)
+        new_p, new_v, valid, specs = self.__call__(self._id)
 
         if not valid:
             return
@@ -278,6 +280,22 @@ class DLI:
         target_p.pose.xyz.y = new_p[1] * self._radius + self._bcenter.y
 
         self._target_p_pub.publish(target_p)
+
+        dli_specs = DLISpecs()
+        dli_specs.gx = specs[0]
+        dli_specs.gy = specs[1]
+        dli_specs.sx = specs[2]
+        dli_specs.sy = specs[3]
+        dli_specs.target_x = target_p.pose.xyz.x
+        dli_specs.target_y = target_p.pose.xyz.y
+        dli_specs.agent.pose.xyz.x = self._individual_poses[-1, self._id * 2]
+        dli_specs.agent.pose.xyz.y = self._individual_poses[-1,
+                                                            self._id * 2 + 1]
+
+        # ! hardcoded indices here. This model only works with 2 individuals
+        dli_specs.neigh.pose.xyz.x = self._individual_poses[-1, 2]
+        dli_specs.neigh.pose.xyz.y = self._individual_poses[-1, 3]
+        self._dli_spec_pub.publish(dli_specs)
 
         lin_v = np.sqrt(
             (new_v[0] * self._radius) ** 2
@@ -318,7 +336,7 @@ class DLI:
 
     def __call__(self, fidx):
         if self._individual_poses is None or self._individual_velocities is None:
-            return [None, None, None]
+            return [None, None, None, None]
 
         X = np.empty((self._num_timesteps, 0))
 
@@ -371,7 +389,7 @@ class DLI:
         r = np.sqrt((p_hat[0] - setup.center()[0])
                     ** 2 + (p_hat[1] - setup.center()[1]) ** 2)
 
-        return [p_hat, v_hat, setup.is_valid(r)]
+        return [p_hat, v_hat, setup.is_valid(r), [g_x, g_y, prediction[0, 2] * self._var_coef, prediction[0, 3] * self._var_coef]]
 
     def _filtered_poses_cb(self, msg):
         if (len(msg.poses) == 0):
@@ -402,6 +420,11 @@ class DLI:
                 row.append(conv.x)
                 row.append(conv.y)
         row = np.array(row)
+        if row.shape[0] < 4:
+            if self._individual_poses.shape[0] > 0:
+                row = np.vstack([row, self._individual_poses[-1, 2:]])
+            else:
+                return
         self._individual_poses = np.vstack([self._individual_poses, row])
 
         if self._individual_poses.shape[0] > self._num_timesteps:
@@ -425,15 +448,15 @@ class DLI:
         dist = np.sqrt((self._robot_pose.pose.xyz.x -
                        ind_pose[0]) ** 2 + (self._robot_pose.pose.xyz.y - ind_pose[1]) ** 2)
 
-        if dist > 0.06:
-            print(dist)
-            self._lure_lost_count += 1
-        else:
-            self._lure_lost_count += 0
-            self._lure_rescue = False
+        # if dist > 0.1:
+        #     print(dist)
+        #     self._lure_lost_count += 1
+        # else:
+        #     self._lure_lost_count += 0
+        #     self._lure_rescue = False
 
-        if self._lure_lost_count > self._lost_count_thres:
-            self._lure_rescue = True
+        # if self._lure_lost_count > self._lost_count_thres:
+        #     self._lure_rescue = True
 
 
 def main():

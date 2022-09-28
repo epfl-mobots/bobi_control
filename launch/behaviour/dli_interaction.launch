@@ -17,7 +17,7 @@
                 lost_count_thres: 5
         </rosparam>
 
-        <node name="fpose_drop" pkg="topic_tools" type="drop" output="screen" args="filtered_poses 3 4 dl_interaction/filtered_poses_drop">
+        <node name="fpose_drop" pkg="topic_tools" type="drop" output="screen" args="filtered_poses 7 8 dl_interaction/filtered_poses_drop">
         </node>
 
         <!-- <node name="rpose_drop" pkg="topic_tools" type="drop" output="screen" args="robot_poses 3 4 dl_interaction/robot_poses_drop">
