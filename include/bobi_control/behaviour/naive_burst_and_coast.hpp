@@ -47,6 +47,7 @@ namespace bobi {
                 // kicks
                 float vmean = 43.;
                 float vmin = 1.;
+                float coeff_peak_v = 1.2;
                 float vmem = 0.9;
                 float vmem12 = 0.5;
                 float vcut = 35.;
@@ -90,24 +91,13 @@ namespace bobi {
                   _lure_rescue(false),
                   _mean_speed(0.),
                   _always_current_pos(false),
-                  _reset_current_pose(true)
+                  _reset_current_pose(true),
+                  _last_kick_status(true)
             {
                 // Initialize ROS interface
                 dynamic_reconfigure::Server<bobi_control::NaiveBurstAndCoastConfig>::CallbackType f;
                 f = boost::bind(&NaiveBurstAndCoast::_config_cb, this, _1, _2);
                 _cfg_server.setCallback(f);
-
-                _set_vel_pub = nh->advertise<bobi_msgs::MotorVelocities>("set_velocities", 1);
-                _set_target_pos_pub = nh->advertise<bobi_msgs::PoseStamped>("target_position", 1);
-                _set_target_vel_pub = nh->advertise<bobi_msgs::MotorVelocities>("target_velocities", 1);
-                _kick_specs_pub = nh->advertise<bobi_msgs::KickSpecs>("kick_specs", 1);
-
-                // _set_vel_pub = nh->advertise<bobi_msgs::MotorVelocities>("target_velocities", 1);
-                _cur_pose_sub = nh->subscribe("filtered_poses", 1, &NaiveBurstAndCoast::_individual_poses_cb, this);
-                _speed_estimates_sub = nh->subscribe("speed_estimates", 1, &NaiveBurstAndCoast::_speed_estimates_cb, this);
-
-                _max_accel_cli = nh->serviceClient<bobi_msgs::MaxAcceleration>("set_max_acceleration");
-                _set_duty_cycle_cli = nh->serviceClient<bobi_msgs::DutyCycle>("set_duty_cycle");
 
                 assert(nh->getParam("top_camera/pix2m", _top_pix2m));
                 assert(nh->getParam("bottom_camera/pix2m", _bottom_pix2m));
@@ -124,6 +114,20 @@ namespace bobi {
                 // Initialize model params and the first kick
                 _t0 = 0;
                 _tau = 0;
+
+                _set_vel_pub = nh->advertise<bobi_msgs::MotorVelocities>("set_velocities", 1);
+                _set_target_pos_pub = nh->advertise<bobi_msgs::PoseStamped>("target_position", 1);
+                _set_target_vel_pub = nh->advertise<bobi_msgs::MotorVelocities>("target_velocities", 1);
+                _kick_specs_pub = nh->advertise<bobi_msgs::KickSpecs>("kick_specs", 1);
+
+                // _set_vel_pub = nh->advertise<bobi_msgs::MotorVelocities>("target_velocities", 1);
+                _cur_pose_sub = nh->subscribe("filtered_poses", 1, &NaiveBurstAndCoast::_individual_poses_cb, this);
+                _speed_estimates_sub = nh->subscribe("speed_estimates", 1, &NaiveBurstAndCoast::_speed_estimates_cb, this);
+
+                _max_accel_cli = nh->serviceClient<bobi_msgs::MaxAcceleration>("set_max_acceleration");
+                _set_duty_cycle_cli = nh->serviceClient<bobi_msgs::DutyCycle>("set_duty_cycle");
+
+                _last_pose_stamp = ros::Time::now();
             }
 
             void spin_once()
@@ -137,6 +141,24 @@ namespace bobi {
                 if (_prev_stamp > ros::Time(0)) {
                     std::lock_guard<std::mutex> pose_guard(_pose_mtx);
                     std::lock_guard<std::mutex> pos_guard(_tpos_mtx);
+
+                    if (!_individual_poses.size()) {
+                        ROS_ERROR("No agent information");
+                        return;
+                    }
+
+                    // double dif = _individual_poses[_id].header.stamp.toSec() - _last_pose_stamp.toSec();
+                    // if (
+                    //     (_pose_in_cm.pose.xyz.x == _individual_poses[_id].pose.xyz.x)
+                    //     && (_pose_in_cm.pose.xyz.y == _individual_poses[_id].pose.xyz.y)
+                    //     && _params.reset_current_pose
+                    //     && (_individual_poses[_id].header.stamp.toSec() <= _last_pose_stamp.toSec())) {
+                    //     // ROS_WARN(".%f", dif);
+                    //     // return;
+                    // }
+                    // ROS_WARN(".%f", (ros::Time::now() - _individual_poses[_id].header.stamp).toSec());
+
+                    // _last_pose_stamp = _individual_poses[_id].header.stamp;
 
                     _total_time += _dt;
 
@@ -155,11 +177,6 @@ namespace bobi {
                     //     _pose.pose.xyz.y += _prev_v[1] * _dt;
                     // }
 
-                    if (!_individual_poses.size()) {
-                        ROS_ERROR("No agent information");
-                        return;
-                    }
-
                     _pose_in_cm = _individual_poses[_id];
 
                     bobi_msgs::PoseStamped rpose_bot = _pose;
@@ -170,17 +187,17 @@ namespace bobi {
                     _traj_pose = _pose_in_cm.pose;
 
                     double lure_vs_robot_dist = euc_distance(_pose_in_cm, rpose_bot);
-                    if (lure_vs_robot_dist > 8.5) {
-                        ROS_INFO("Rescuing the lure");
+                    if (lure_vs_robot_dist > 7) {
+                        ROS_INFO("Lure lagging behind");
                         if (!_params.reset_current_pose) {
                             // _lure_rescue = true;
                         }
                         _reset_current_pose = true;
                     }
 
-                    if (lure_vs_robot_dist < 1.) {
+                    if (lure_vs_robot_dist < 0.5) {
                         if (_lure_rescue) {
-                            ROS_INFO("Lure rescued!");
+                            ROS_INFO("Lure close to the robot");
                             _t0 = _total_time;
                             _tau = 0;
                         }
@@ -199,19 +216,36 @@ namespace bobi {
 
                             if (_speeds.size() == 0) {
                                 for (size_t i = 0; i < _individual_poses.size(); ++i) {
-                                    _speeds.push_back(_params.vmin);
+                                    _speeds.push_back(_params.vmin / 100.);
+                                }
+                            }
+
+                            if (!_last_kick_status) {
+                                if (_individual_poses.size() > 1) {
+                                    _speeds[_id] = _speeds[_id + 1];
+                                }
+                                else {
+                                    _speeds[_id] = 0.1;
                                 }
                             }
 
                             if (!_kick()) {
-
-                                if (((_speeds[_id] * 100) * _dt + r > _params.radius || _iters > 2 * _params.itermax)) {
-                                    ROS_WARN("stuck");
-                                    _new_velocities.left = 0.1;
-                                    _new_velocities.right = -0.1;
-                                    _set_vel_pub.publish(_new_velocities);
+                                _last_kick_status = false;
+                                if ((_iters > _params.itermax)) {
+                                    float new_r = std::sqrt(_pose_in_cm.pose.xyz.x * _pose_in_cm.pose.xyz.x + _pose_in_cm.pose.xyz.y * _pose_in_cm.pose.xyz.y) * 0.98;
+                                    float theta = _angle_to_pipi(std::atan2(_pose_in_cm.pose.xyz.y, _pose_in_cm.pose.xyz.x) * 1.1);
+                                    _target_position.pose.xyz.x = new_r * std::cos(theta);
+                                    _target_position.pose.xyz.y = new_r * std::sin(theta);
+                                    _target_position.pose.xyz.x /= 100.; // position in m
+                                    _target_position.pose.xyz.y /= 100.; // position in m
+                                    _target_position.pose.xyz.x += _setup_center_bottom[0]; // offset by center x coordinate
+                                    _target_position.pose.xyz.y += _setup_center_bottom[1]; // offset by center y coordinate
+                                    // _new_velocities.left = 0.1;
+                                    // _new_velocities.right = -0.1;
+                                    // _set_vel_pub.publish(_new_velocities);
+                                    _set_target_pos_pub.publish(_target_position);
                                     _t0 = _total_time;
-                                    _tau = 0;
+                                    _tau = 0.5;
                                 }
 
                                 ++_iters;
@@ -219,6 +253,7 @@ namespace bobi {
                                 return;
                             }
                             else {
+                                _last_kick_status = true;
                                 _t0 = _total_time;
                                 _iters = 0;
                                 _reset_current_pose = _params.reset_current_pose;
@@ -227,7 +262,8 @@ namespace bobi {
                             bobi_msgs::PoseStamped candidate_pose;
 
                             float expt = std::exp(-_tau / _params.tau0);
-                            float dl = _speed * _params.tau0 * (1. - expt) + _params.dc;
+                            // float dl = _speed * _params.tau0 * (1. - expt) + _params.dc;
+                            float dl = _speed * _tau + _params.dc;
                             candidate_pose.pose.xyz.x = _pose_in_cm.pose.xyz.x + dl * cos(_traj_pose.rpy.yaw);
                             candidate_pose.pose.xyz.y = _pose_in_cm.pose.xyz.y + dl * sin(_traj_pose.rpy.yaw);
                             _mean_speed = dl / _tau;
@@ -236,6 +272,9 @@ namespace bobi {
                             _target_position = candidate_pose;
                             _target_position.pose.rpy.yaw = _traj_pose.rpy.yaw;
                             _prev_pose_in_cm = _target_position;
+
+                            _kick_poses.clear();
+                            std::copy(_individual_poses.begin(), _individual_poses.end(), std::back_inserter(_kick_poses));
 
                             // Take care of scale
                             _mean_speed /= 100.; // speed in m/s
@@ -302,7 +341,9 @@ namespace bobi {
         protected:
             void _individual_poses_cb(const bobi_msgs::PoseVec::ConstPtr& pose_vec)
             {
-                _individual_poses.clear();
+                if (pose_vec->poses.size()) {
+                    _individual_poses.clear();
+                }
                 for (size_t i = 0; i < pose_vec->poses.size(); ++i) {
                     bobi_msgs::PoseStamped pose = pose_vec->poses[i];
                     pose = convert_top2bottom(pose);
@@ -354,6 +395,7 @@ namespace bobi {
                 _params.psi_c = config.psi_c;
                 _params.vmean = config.vmean;
                 _params.vmin = config.vmin;
+                _params.coeff_peak_v = config.coeff_peak_v;
                 _params.vmem = config.vmem;
                 _params.vcut = config.vcut;
                 _params.taumean = config.taumean;
@@ -385,6 +427,7 @@ namespace bobi {
             float _mean_speed;
             bool _always_current_pos;
             bool _reset_current_pose;
+            ros::Time _last_pose_stamp;
 
             const float _wheel_radius;
             const float _wheel_distance;
@@ -410,9 +453,7 @@ namespace bobi {
                 ++_num_kicks;
 
                 double speed_in_cm = _speeds[_id] * 100;
-                if (_iters > _params.itermax) {
-                    speed_in_cm = 10.;
-                }
+
                 float v0old = speed_in_cm;
                 float vold = speed_in_cm * std::exp(-_tau / _params.tau0);
                 _traj_pose.rpy.yaw = _pose_in_cm.pose.rpy.yaw;
@@ -463,8 +504,8 @@ namespace bobi {
                 // do {
                 float prob = ran3();
                 if (prob < _params.vmem) {
-                    if (prob < _params.vmem * _params.vmem12) {
-                        _speed = _speeds[cn_idx] * 100;
+                    if (prob < _params.vmem12) {
+                        _speed = _speeds[cn_idx] * 100 * _params.coeff_peak_v;
                     }
                     else {
                         _speed = v0old;
@@ -490,7 +531,8 @@ namespace bobi {
                 // cognitive noise
                 float gauss = std::sqrt(-2. * log(ran3())) * cos(2 * M_PI * ran3());
                 phi_new = _traj_pose.rpy.yaw + dphi_int + _params.gamma_rand * gauss * (1. - _params.alpha_w * fw);
-                float dl = _speed * _params.tau0 * (1. - std::exp(-_tau / _params.tau0)) + _params.dc;
+                // float dl = _speed * _params.tau0 * (1. - std::exp(-_tau / _params.tau0)) + _params.dc;
+                float dl = _speed * _tau + _params.dc;
                 float x_new = _pose_in_cm.pose.xyz.x + dl * std::cos(phi_new);
                 float y_new = _pose_in_cm.pose.xyz.y + dl * std::sin(phi_new);
                 r_new = std::sqrt(x_new * x_new + y_new * y_new);
@@ -614,6 +656,7 @@ namespace bobi {
             uint64_t _num_jumps;
             uint64_t _num_kicks;
             uint64_t _num_uturn;
+            bool _last_kick_status;
 
             int _iters;
             double _total_time;
@@ -621,6 +664,7 @@ namespace bobi {
             float _tau;
             float _speed;
             bobi_msgs::Pose _traj_pose;
+            std::vector<bobi_msgs::PoseStamped> _kick_poses;
         }; // namespace behaviour
 
     } // namespace behaviour
