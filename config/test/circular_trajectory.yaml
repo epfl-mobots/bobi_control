@@ -2,5 +2,5 @@ circular_trajectory:
   waypoint_angle: 0.1
   radius: 0.18
   center: [0.68, 0.45]
-  rate: 3
+  rate: 5
   cw: true
