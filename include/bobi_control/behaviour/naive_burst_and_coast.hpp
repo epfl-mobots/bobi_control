@@ -26,6 +26,7 @@ namespace bobi {
                 float radius = 20.;
 
                 // interactions
+                bool use_closest_individual = false;
                 int perceived_agents = 1;
                 float gamma_rand = 0.3;
                 float gamma_wall = 0.23;
@@ -381,6 +382,7 @@ namespace bobi {
                 _params.radius = config.radius * 100;
                 _params.alpha_w = config.alpha_w;
                 _params.iuturn = config.iuturn;
+                _params.use_closest_individual = config.use_closest_individual;
                 _params.perceived_agents = config.perceived_agents;
                 _params.gamma_rand = config.gamma_rand;
                 _params.gamma_wall = config.gamma_wall;
@@ -593,15 +595,11 @@ namespace bobi {
                 float current_radius_corrected = std::min(static_cast<float>(std::sqrt(_pose_in_cm.pose.xyz.x * _pose_in_cm.pose.xyz.x + _pose_in_cm.pose.xyz.y * _pose_in_cm.pose.xyz.y)), _params.radius);
                 float rw = _params.radius - current_radius_corrected;
 
-                float dphi_fish = 0.;
-                float dphiw = 0.;
-                float fw;
-
                 // wall interaction
                 float theta_w = _angle_to_pipi(_pose_in_cm.pose.rpy.yaw - theta);
-                fw = std::exp(-std::pow(rw / _params.dw, 2));
+                float fw = std::exp(-std::pow(rw / _params.dw, 2));
                 float ow = std::sin(theta_w) * (1. + 0.7 * std::cos(2. * theta_w));
-                dphiw = _params.gamma_wall * fw * ow;
+                float dphiw = _params.gamma_wall * fw * ow;
 
                 float dphiwsym = _params.gamma_sym * std::sin(2. * theta_w) * std::exp(-rw / _params.dw) * rw / _params.dw;
                 float dphiwasym = _params.gamma_asym * std::cos(theta_w) * std::exp(-rw / _params.dw) * rw / _params.dw;
@@ -609,6 +607,7 @@ namespace bobi {
                 dphiw += dphiwsym + dphiwasym;
 
                 // fish interaction
+                std::vector<float> dphi_fish;
                 for (int i : neighs) {
                     float dij = std::get<0>(state)[i];
                     float psi_ij = std::get<1>(state)[i];
@@ -627,9 +626,17 @@ namespace bobi {
                     float eali = 1. + 0.6 * std::cos(psi_ij) - 0.32 * std::cos(2. * psi_ij);
                     float dphiali = _params.gamma_alignment * fali * oali * eali;
 
-                    dphi_fish += dphiatt + dphiali;
+                    dphi_fish.push_back(dphiatt + dphiali);
                 } // for each neighbour
-                float dphi_int = dphiw + dphi_fish;
+
+                if (!_params.use_closest_individual) {
+                    std::sort(dphi_fish.begin(), dphi_fish.end(), [](const float& lv, const float& rv) {
+                        return lv > rv;
+                    });
+                }
+                size_t offset = std::min(dphi_fish.size(), static_cast<size_t>(_params.perceived_agents));
+                float dphi_f = std::accumulate(dphi_fish.begin(), dphi_fish.begin() + offset, 0);
+                float dphi_int = dphiw + dphi_f;
 
                 return {dphi_int, fw};
             }
