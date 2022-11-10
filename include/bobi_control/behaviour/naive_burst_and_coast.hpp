@@ -231,7 +231,7 @@ namespace bobi {
                             kick_specs.target_x = target_pose.pose.xyz.x;
                             kick_specs.target_y = target_pose.pose.xyz.y;
                             kick_specs.dl = _speed * _tau + _params.dc;
-                            kick_specs.dphi = _angle_to_pipi(target_pose.pose.rpy.yaw - _individual_poses[_id].pose.rpy.yaw);
+                            kick_specs.dphi = _angle_to_pipi(target_pose.pose.rpy.yaw - _reference_pose.rpy.yaw);
                             kick_specs.phi = target_pose.pose.rpy.yaw;
                             kick_specs.tau = _tau;
                             kick_specs.tau0 = _params.tau0;
