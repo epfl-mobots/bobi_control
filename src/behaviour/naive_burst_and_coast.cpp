@@ -35,7 +35,11 @@ int main(int argc, char** argv)
     while (ros::ok()) {
         ctrl.spin_once();
         ros::spinOnce();
-        loop_rate.sleep();
+        if (ctrl.kicked()) {
+            ros::Duration(ctrl.get_tau()).sleep();
+        } else {
+            loop_rate.sleep();
+        }
     }
 
     return 0;
