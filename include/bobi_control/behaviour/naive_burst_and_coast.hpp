@@ -507,7 +507,13 @@ namespace bobi {
                 float prob = ran3();
                 if (prob < _params.vmem) {
                     if (prob < _params.vmem12) {
-                        _speed = _speeds[cn_idx] * 100 * _params.coeff_peak_v;
+                        // _speed = _speeds[cn_idx] * 100 * _params.coeff_peak_v;
+                        _speed = 0.;
+                        for (size_t idx : neighs) {
+                            _speed += _speeds[idx];
+                        }
+                        _speed /= _speeds.size();
+                        _speed *= 100;
                     }
                     else {
                         _speed = v0old;
@@ -558,12 +564,16 @@ namespace bobi {
             {
                 size_t num_fish = _individual_poses.size();
 
-                Eigen::VectorXd distances(num_fish);
-                Eigen::VectorXd psis_ij(num_fish);
-                Eigen::VectorXd psis_ji(num_fish);
-                Eigen::VectorXd dphis(num_fish);
+                Eigen::VectorXd distances = Eigen::VectorXd::Zero(num_fish);
+                Eigen::VectorXd psis_ij = Eigen::VectorXd::Zero(num_fish);
+                Eigen::VectorXd psis_ji = Eigen::VectorXd::Zero(num_fish);
+                Eigen::VectorXd dphis = Eigen::VectorXd::Zero(num_fish);
 
                 for (uint i = 0; i < num_fish; ++i) {
+                    if (_id == i) {
+                        continue;
+                    }
+
                     distances(i) = std::sqrt(
                         std::pow(_pose_in_cm.pose.xyz.x - _individual_poses[i].pose.xyz.x, 2)
                         + std::pow(_pose_in_cm.pose.xyz.y - _individual_poses[i].pose.xyz.y, 2));
@@ -631,7 +641,7 @@ namespace bobi {
 
                 if (!_params.use_closest_individual) {
                     std::sort(dphi_fish.begin(), dphi_fish.end(), [](const float& lv, const float& rv) {
-                        return lv > rv;
+                        return std::abs(lv) > std::abs(rv);
                     });
                 }
                 size_t offset = std::min(dphi_fish.size(), static_cast<size_t>(_params.perceived_agents));
