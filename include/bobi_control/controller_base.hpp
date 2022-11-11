@@ -6,6 +6,7 @@
 #include <bobi_msgs/PoseVec.h>
 #include <bobi_msgs/MotorVelocities.h>
 #include <bobi_msgs/ConvertCoordinates.h>
+#include <bobi_vision/coordinate_mapper.hpp>
 
 #include <cassert>
 
@@ -25,10 +26,26 @@ namespace bobi {
             _target_vel_sub = _nh->subscribe("target_velocities", 1, &ControllerBase::_target_velocities_cb, this);
             _target_pos_sub = _nh->subscribe("target_position", 1, &ControllerBase::_target_position_cb, this);
 
-            _bottom2top_srv = _nh->serviceClient<bobi_msgs::ConvertCoordinates>("convert_bottom2top");
-            _top2bottom_srv = _nh->serviceClient<bobi_msgs::ConvertCoordinates>("convert_top2bottom");
-            _bottom2top_srv.waitForExistence();
-            _top2bottom_srv.waitForExistence();
+            std::tie(_points_bottom, _points_top, _top_cfg, _bottom_cfg) = init_coordinate_mapper(nh);
+            _bottom2top = std::shared_ptr<CoordinateMapper>(new CoordinateMapper(_nh,
+                "None",
+                _points_bottom,
+                _points_top,
+                _top_cfg.camera_matrix,
+                _top_cfg.distortion_coeffs,
+                _top_cfg.pix2m,
+                _top_cfg.camera_px_width_undistorted,
+                _top_cfg.camera_px_height_undistorted));
+
+            _top2bottom = std::shared_ptr<CoordinateMapper>(new CoordinateMapper(_nh,
+                "None",
+                _points_top,
+                _points_bottom,
+                _bottom_cfg.camera_matrix,
+                _bottom_cfg.distortion_coeffs,
+                _bottom_cfg.pix2m,
+                _bottom_cfg.camera_px_width_undistorted,
+                _bottom_cfg.camera_px_height_undistorted));
 
             _target_velocities.left = 0.;
             _target_velocities.right = 0.;
@@ -52,25 +69,19 @@ namespace bobi {
 
         bobi_msgs::PoseStamped convert_top2bottom(const bobi_msgs::PoseStamped& pose)
         {
-            bobi_msgs::ConvertCoordinates srv;
-            srv.request.p = pose.pose.xyz;
-            _top2bottom_srv.call(srv);
             bobi_msgs::PoseStamped res;
-            res.header = pose.header;
-            res.pose.xyz = srv.response.converted_p;
+            res.pose.xyz = _top2bottom->convert(pose.pose.xyz);
             res.pose.rpy = pose.pose.rpy;
+            res.header = pose.header;
             return res;
         }
 
         bobi_msgs::PoseStamped convert_bottom2top(const bobi_msgs::PoseStamped& pose)
         {
-            bobi_msgs::ConvertCoordinates srv;
-            srv.request.p = pose.pose.xyz;
-            _bottom2top_srv.call(srv);
             bobi_msgs::PoseStamped res;
-            res.header = pose.header;
-            res.pose.xyz = srv.response.converted_p;
+            res.pose.xyz = _bottom2top->convert(pose.pose.xyz);
             res.pose.rpy = pose.pose.rpy;
+            res.header = pose.header;
             return res;
         }
 
@@ -126,8 +137,12 @@ namespace bobi {
         const int _id;
         const std::string _pose_topic;
 
-        ros::ServiceClient _top2bottom_srv;
-        ros::ServiceClient _bottom2top_srv;
+        std::vector<cv::Point2d> _points_bottom;
+        std::vector<cv::Point2d> _points_top;
+        top::CameraConfig _top_cfg;
+        bottom::CameraConfig _bottom_cfg;
+        std::shared_ptr<CoordinateMapper> _bottom2top;
+        std::shared_ptr<CoordinateMapper> _top2bottom;
 
         ros::Subscriber _target_vel_sub;
         std::mutex _tvel_mtx;

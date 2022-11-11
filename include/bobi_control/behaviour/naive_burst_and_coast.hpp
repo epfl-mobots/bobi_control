@@ -247,7 +247,7 @@ namespace bobi {
                     }
                     else {
                         bobi_msgs::PoseStamped target_pose;
-                        
+
                         target_pose = _individual_poses[_id];
                         target_pose.header.stamp = ros::Time::now();
 
@@ -273,6 +273,7 @@ namespace bobi {
         protected:
             void _individual_poses_cb(const bobi_msgs::PoseVec::ConstPtr& pose_vec)
             {
+                auto start = ros::Time::now();
                 if (pose_vec->poses.size()) {
                     _individual_poses.clear();
                 }
@@ -285,6 +286,7 @@ namespace bobi {
                     pose.pose.xyz.y *= 100;
                     _individual_poses.push_back(pose);
                 }
+                ROS_ERROR("el: %f", (ros::Time::now() - start).toSec());
             }
 
             void _speed_estimates_cb(const bobi_msgs::SpeedEstimateVec::ConstPtr& speed_vec)
@@ -436,6 +438,7 @@ namespace bobi {
 
 #ifdef USE_BLOCKING_REJ
                     if (++_iters > _params.itermax) {
+                        ROS_WARN("stuck");
                         _iters = 0;
                         // float dphiplus = 1.5 * (-log(ran3()));
                         float dphiplus = 0.1 * ran3();
@@ -449,15 +452,17 @@ namespace bobi {
                         std::tie(dphi_int, fw) = _compute_interactions(state, neighs);
                     }
                 } while (r_new > _params.radius);
+                ROS_WARN("untuck");
+
                 return true;
 #else
-                    if (r_new > _params.radius) {
-                        _tau = 0;
-                        return false;
-                    }
-                    else {
-                        return true;
-                    }
+                if (r_new > _params.radius) {
+                    _tau = 0;
+                    return false;
+                }
+                else {
+                    return true;
+                }
 #endif
             }
 
@@ -545,6 +550,11 @@ namespace bobi {
                         return std::abs(lv) > std::abs(rv);
                     });
                 }
+                for (auto inf : dphi_fish) {
+                    std::cout << inf << " ";
+                }
+                std::cout << std::endl;
+
                 size_t offset = std::min(dphi_fish.size(), static_cast<size_t>(_params.perceived_agents));
                 float dphi_f = std::accumulate(dphi_fish.begin(), dphi_fish.begin() + offset, 0);
                 float dphi_int = dphiw + dphi_f;
@@ -585,17 +595,18 @@ namespace bobi {
 
             bobi_msgs::Pose _reference_pose;
             bobi_msgs::Pose _prev_reference_pose;
-            
+
         public:
-            float get_tau() {
+            float get_tau()
+            {
                 return _tau;
             }
 
-            float kicked() {
+            float kicked()
+            {
                 return _kicked;
             }
-            
-        }; 
+        };
 
     } // namespace behaviour
 } // namespace bobi
