@@ -93,7 +93,7 @@ namespace bobi {
                   _iters(0),
                   _lure_rescue(false),
                   _mean_speed(0.),
-                  _reset_current_pose(true)
+                  _reset_current_pose(false)
             {
                 // Initialize ROS interface
                 dynamic_reconfigure::Server<bobi_control::NaiveBurstAndCoastConfig>::CallbackType f;
@@ -115,6 +115,9 @@ namespace bobi {
                 // Initialize model params and the first kick
                 _current_time = 0;
                 _tau = 0;
+                _pose_in_cm.pose.xyz.x = 0;
+                _pose_in_cm.pose.xyz.y = 0;
+                _pose_in_cm.pose.rpy.yaw = 0;
                 _reference_pose.rpy.pitch = -1;
 
                 _set_vel_pub = nh->advertise<bobi_msgs::MotorVelocities>("set_velocities", 1);
@@ -154,6 +157,7 @@ namespace bobi {
                     _pose_in_cm = _individual_poses[_id];
                     if (_reference_pose.rpy.pitch == -1 || _reset_current_pose) {
                         _reference_pose = _pose_in_cm.pose;
+                        _reference_pose.rpy.pitch = 0;
                     }
 
                     if (!_lure_rescue) {
@@ -178,8 +182,8 @@ namespace bobi {
                                     target_pose.pose.xyz.y = new_r * std::sin(theta);
                                     target_pose.pose.xyz.x /= 100.; // position in m
                                     target_pose.pose.xyz.y /= 100.; // position in m
-                                    target_pose.pose.xyz.x += _setup_center_bottom[0]; // offset by center x coordinate
-                                    target_pose.pose.xyz.y += _setup_center_bottom[1]; // offset by center y coordinate
+                                    target_pose.pose.xyz.x += _setup_center_top[0]; // offset by center x coordinate
+                                    target_pose.pose.xyz.y += _setup_center_top[1]; // offset by center y coordinate
                                     _set_target_pose_pub.publish(target_pose);
                                     _current_time = 0;
                                     _tau = 0.5;
@@ -204,16 +208,19 @@ namespace bobi {
                             _mean_speed /= 100.; // speed in m/s
                             target_pose.pose.xyz.x /= 100.; // position in m
                             target_pose.pose.xyz.y /= 100.; // position in m
-                            target_pose.pose.xyz.x += _setup_center_bottom[0]; // offset by center x coordinate
-                            target_pose.pose.xyz.y += _setup_center_bottom[1]; // offset by center y coordinate
+                            target_pose.pose.xyz.x += _setup_center_top[0]; // offset by center x coordinate
+                            target_pose.pose.xyz.y += _setup_center_top[1]; // offset by center y coordinate
+                            target_pose = convert_top2bottom(target_pose);
 
                             // store the kick specs for logs (and control?)
                             bobi_msgs::KickSpecs kick_specs;
                             kick_specs.agent.pose = _reference_pose;
                             kick_specs.agent.pose.xyz.x /= 100.; // position in m
                             kick_specs.agent.pose.xyz.y /= 100.; // position in m
-                            kick_specs.agent.pose.xyz.x += _setup_center_bottom[0]; // offset by center x coordinate
-                            kick_specs.agent.pose.xyz.y += _setup_center_bottom[1]; // offset by center y coordinate
+                            kick_specs.agent.pose.xyz.x += _setup_center_top[0]; // offset by center x coordinate
+                            kick_specs.agent.pose.xyz.y += _setup_center_top[1]; // offset by center y coordinate
+                            kick_specs.agent = convert_top2bottom(kick_specs.agent);
+
                             // kick_specs.neighs.poses.resize(_individual_poses.size() - _id - 1);
                             for (size_t i = 0; i < _individual_poses.size(); ++i) {
                                 if (_id == i) {
@@ -224,8 +231,9 @@ namespace bobi {
                                 p.pose.rpy.yaw = _individual_poses[i].pose.rpy.yaw;
                                 p.pose.xyz.x = _individual_poses[i].pose.xyz.x / 100.; // position in m
                                 p.pose.xyz.y = _individual_poses[i].pose.xyz.y / 100.; // position in m
-                                p.pose.xyz.x += _setup_center_bottom[0]; // offset by center x coordinate
-                                p.pose.xyz.y += _setup_center_bottom[1]; // offset by center y coordinate
+                                p.pose.xyz.x += _setup_center_top[0]; // offset by center x coordinate
+                                p.pose.xyz.y += _setup_center_top[1]; // offset by center y coordinate
+                                p = convert_top2bottom(p);
                                 kick_specs.neighs.poses.push_back(p);
                             }
                             kick_specs.target_x = target_pose.pose.xyz.x;
@@ -239,6 +247,9 @@ namespace bobi {
 
                             _prev_reference_pose = _reference_pose;
                             _reference_pose = _desired_pose;
+                            _speed = std::sqrt(std::pow(_reference_pose.xyz.x - _prev_reference_pose.xyz.x, 2)
+                                         + std::pow(_reference_pose.xyz.y - _prev_reference_pose.xyz.y, 2))
+                                / _tau;
 
                             _set_target_pose_pub.publish(target_pose);
                             _target_velocities.resultant = _mean_speed;
@@ -279,14 +290,13 @@ namespace bobi {
                 }
                 for (size_t i = 0; i < pose_vec->poses.size(); ++i) {
                     bobi_msgs::PoseStamped pose = pose_vec->poses[i];
-                    pose = convert_top2bottom(pose);
-                    pose.pose.xyz.x -= _setup_center_bottom[0];
-                    pose.pose.xyz.y -= _setup_center_bottom[1];
+                    // pose = convert_top2bottom(pose);
+                    pose.pose.xyz.x -= _setup_center_top[0];
+                    pose.pose.xyz.y -= _setup_center_top[1];
                     pose.pose.xyz.x *= 100;
                     pose.pose.xyz.y *= 100;
                     _individual_poses.push_back(pose);
                 }
-                ROS_ERROR("el: %f", (ros::Time::now() - start).toSec());
             }
 
             void _speed_estimates_cb(const bobi_msgs::SpeedEstimateVec::ConstPtr& speed_vec)
@@ -397,26 +407,26 @@ namespace bobi {
                     //     cn_idx = neighs[0]; // closest_neigh idx
                     // }
 
-                    // do {
-                    float prob = ran3();
-                    if (prob < _params.vmem) {
-                        if (prob < _params.vmem12 && neighs.size()) {
-                            // _speed = _speeds[cn_idx] * 100 * _params.coeff_peak_v;
-                            _speed = 0.;
-                            for (size_t idx : neighs) {
-                                _speed += _speeds[idx];
+                    do {
+                        float prob = ran3();
+                        if (prob < _params.vmem) {
+                            if (prob < _params.vmem12 && neighs.size()) {
+                                // _speed = _speeds[cn_idx] * 100 * _params.coeff_peak_v;
+                                _speed = 0.;
+                                for (size_t idx : neighs) {
+                                    _speed += _speeds[idx];
+                                }
+                                _speed /= _speeds.size();
+                                _speed *= 100;
                             }
-                            _speed /= _speeds.size();
-                            _speed *= 100;
+                            else {
+                                _speed = speed_in_cm;
+                            }
                         }
                         else {
-                            _speed = speed_in_cm;
+                            _speed = _params.vmin + _params.vmean * (-log(ran3() * ran3() * ran3())) / 3.;
                         }
-                    }
-                    else {
-                        _speed = _params.vmin + _params.vmean * (-log(ran3() * ran3() * ran3())) / 3.;
-                    }
-                    // } while (_speed > _params.vcut); // speed
+                    } while (_speed > _params.vcut); // speed
                     _speed = std::min(_speed, _params.vcut);
                     _speed = std::max(_speed, _params.vmin);
 
@@ -438,7 +448,6 @@ namespace bobi {
 
 #ifdef USE_BLOCKING_REJ
                     if (++_iters > _params.itermax) {
-                        ROS_WARN("stuck");
                         _iters = 0;
                         // float dphiplus = 1.5 * (-log(ran3()));
                         float dphiplus = 0.1 * ran3();
@@ -452,7 +461,6 @@ namespace bobi {
                         std::tie(dphi_int, fw) = _compute_interactions(state, neighs);
                     }
                 } while (r_new > _params.radius);
-                ROS_WARN("untuck");
 
                 return true;
 #else
@@ -477,7 +485,7 @@ namespace bobi {
 
                 for (uint i = 0; i < num_fish; ++i) {
                     if (_id == i) {
-                        continue;
+                        // continue;
                     }
 
                     distances(i) = std::sqrt(
@@ -530,10 +538,10 @@ namespace bobi {
                     float dphi_ij = std::get<3>(state)[i];
 
                     float fatt = (dij - 6.) / 3. / (1. + std::pow(dij / 20., 2));
-                    // float oatt = std::sin(psi_ij) * (1. - 0.33 * std::cos(psi_ij));
-                    // float eatt = 1. - 0.48 * std::cos(dphi_ij) - 0.31 * std::cos(2. * dphi_ij);
-                    float oatt = std::sin(psi_ij) * (1. + std::cos(psi_ij));
-                    float eatt = 1.;
+                    float oatt = std::sin(psi_ij) * (1. - 0.33 * std::cos(psi_ij));
+                    float eatt = 1. - 0.48 * std::cos(dphi_ij) - 0.31 * std::cos(2. * dphi_ij);
+                    // float oatt = std::sin(psi_ij) * (1. + std::cos(psi_ij));
+                    // float eatt = 1.;
                     float dphiatt = _params.gamma_attraction * fatt * oatt * eatt;
 
                     // float fali = (dij + 3. ) / 6. * std::exp(-std::pow(dij / 20., 2));
@@ -566,8 +574,9 @@ namespace bobi {
             {
                 std::vector<int> neigh_idcs;
                 for (int i = 0; i < values.rows(); ++i) {
-                    if (i == kicker_idx)
-                        continue;
+                    if (i == kicker_idx) {
+                        // continue;
+                    }
                     neigh_idcs.push_back(i);
                 }
 
