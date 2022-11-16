@@ -25,7 +25,7 @@ namespace bobi {
 
         namespace defaults {
             struct RummyIndividualParams {
-                float radius = 20.;
+                float radius = 24.5;
 
                 // interactions
                 bool use_closest_individual = false;
@@ -34,7 +34,6 @@ namespace bobi {
                 float gamma_wall = 0.23;
                 float gamma_sym = 0.;
                 float gamma_asym = 0.05;
-                float wall_interaction_range = 6.;
 
                 float dw = 6.;
                 float dc = 1.;
@@ -42,17 +41,12 @@ namespace bobi {
                 float gamma_attraction = 0.3;
                 float gamma_alignment = 0.3;
 
-                bool iuturn = true;
-                float duturn = 6.;
-                float pjump = 0.;
-                float psi_c = 0.25;
-
                 // kicks
-                float vmean = 43.;
+                float vmean = 11.;
                 float vmin = 1.;
                 float coeff_peak_v = 1.2;
-                float vmem = 0.9;
-                float vmem12 = 0.5;
+                float vmem = 0.85;
+                float vmem12 = 0.6;
                 float vcut = 35.;
                 float taumean = 0.52;
                 float taumin = 0.2;
@@ -61,7 +55,7 @@ namespace bobi {
                 bool reset_current_pose = false;
 
                 // simu
-                int itermax = 10;
+                int itermax = 50;
             };
         } // namespace defaults
 
@@ -118,7 +112,11 @@ namespace bobi {
                 _pose_in_cm.pose.xyz.x = 0;
                 _pose_in_cm.pose.xyz.y = 0;
                 _pose_in_cm.pose.rpy.yaw = 0;
-                _reference_pose.rpy.pitch = -1;
+                _reference_pose.xyz.x = 0;
+                _reference_pose.xyz.y = 0;
+                _reference_pose.rpy.yaw = 0;
+                // _reference_pose.rpy.pitch = -1;
+                _reference_pose.rpy.pitch = 0;
 
                 _set_vel_pub = nh->advertise<bobi_msgs::MotorVelocities>("set_velocities", 1);
                 _set_target_pose_pub = nh->advertise<bobi_msgs::PoseStamped>("target_position", 1);
@@ -161,8 +159,6 @@ namespace bobi {
                     }
 
                     if (!_lure_rescue) {
-                        float r = std::sqrt(_pose_in_cm.pose.xyz.x * _pose_in_cm.pose.xyz.x + _pose_in_cm.pose.xyz.y * _pose_in_cm.pose.xyz.y);
-
                         if (_current_time >= _tau) {
                             if (_speeds.size() == 0) {
                                 for (size_t i = 0; i < _individual_poses.size(); ++i) {
@@ -257,6 +253,7 @@ namespace bobi {
                         }
                     }
                     else {
+                        ROS_WARN("Rescuing lure");
                         bobi_msgs::PoseStamped target_pose;
 
                         target_pose = _individual_poses[_id];
@@ -313,7 +310,6 @@ namespace bobi {
                 ROS_INFO("Updated %s config", __func__);
                 _params.radius = config.radius * 100;
                 _params.alpha_w = config.alpha_w;
-                _params.iuturn = config.iuturn;
                 _params.use_closest_individual = config.use_closest_individual;
                 _params.perceived_agents = config.perceived_agents;
                 _params.gamma_rand = config.gamma_rand;
@@ -324,9 +320,6 @@ namespace bobi {
                 _params.dc = config.dc;
                 _params.gamma_attraction = config.gamma_attraction;
                 _params.gamma_alignment = config.gamma_alignment;
-                _params.duturn = config.duturn;
-                _params.pjump = config.pjump;
-                _params.psi_c = config.psi_c;
                 _params.vmean = config.vmean;
                 _params.vmin = config.vmin;
                 _params.coeff_peak_v = config.coeff_peak_v;
@@ -385,7 +378,13 @@ namespace bobi {
                 ++_num_kicks;
 
                 // double speed_in_cm = _speeds[_id] * 100;
-                double speed_in_cm = std::sqrt(std::pow(_reference_pose.xyz.x - _prev_reference_pose.xyz.x, 2) + std::pow(_reference_pose.xyz.y - _prev_reference_pose.xyz.y, 2)) / _dt;
+                double speed_in_cm;
+                if (!_reset_current_pose) {
+                    speed_in_cm = _speed;
+                }
+                else {
+                    speed_in_cm = _speeds[_id] * 100;
+                }
 
                 auto state = _compute_state();
                 auto neighs = _sort_neighbours(std::get<0>(state), _id, Order::INCREASING); // by distance
@@ -489,18 +488,18 @@ namespace bobi {
                     }
 
                     distances(i) = std::sqrt(
-                        std::pow(_pose_in_cm.pose.xyz.x - _individual_poses[i].pose.xyz.x, 2)
-                        + std::pow(_pose_in_cm.pose.xyz.y - _individual_poses[i].pose.xyz.y, 2));
+                        std::pow(_reference_pose.xyz.x - _individual_poses[i].pose.xyz.x, 2)
+                        + std::pow(_reference_pose.xyz.y - _individual_poses[i].pose.xyz.y, 2));
 
-                    psis_ij(i) = std::atan2(_individual_poses[i].pose.xyz.y - _pose_in_cm.pose.xyz.y,
-                                     _individual_poses[i].pose.xyz.x - _pose_in_cm.pose.xyz.x)
-                        - _pose_in_cm.pose.rpy.yaw;
+                    psis_ij(i) = std::atan2(_individual_poses[i].pose.xyz.y - _reference_pose.xyz.y,
+                                     _individual_poses[i].pose.xyz.x - _reference_pose.xyz.x)
+                        - _reference_pose.rpy.yaw;
 
-                    psis_ji(i) = std::atan2(_pose_in_cm.pose.xyz.y - _individual_poses[i].pose.xyz.y,
-                                     _pose_in_cm.pose.xyz.x - _individual_poses[i].pose.xyz.x)
+                    psis_ji(i) = std::atan2(_reference_pose.xyz.y - _individual_poses[i].pose.xyz.y,
+                                     _reference_pose.xyz.x - _individual_poses[i].pose.xyz.x)
                         - _individual_poses[i].pose.rpy.yaw;
 
-                    dphis(i) = _individual_poses[i].pose.rpy.yaw - _pose_in_cm.pose.rpy.yaw;
+                    dphis(i) = _individual_poses[i].pose.rpy.yaw - _reference_pose.rpy.yaw;
                 }
 
                 return {distances, psis_ij, psis_ji, dphis};
@@ -508,7 +507,6 @@ namespace bobi {
 
             std::tuple<float, float> _compute_interactions(const state_t& state, std::vector<int> neighs)
             {
-
                 /**
                  *
                  * Compute interactions, i.e., attraction/repulsion between the current individual and its neighbours.
