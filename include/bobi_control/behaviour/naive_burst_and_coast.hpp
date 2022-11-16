@@ -207,7 +207,6 @@ namespace bobi {
                             target_pose.pose.xyz.y /= 100.; // position in m
                             target_pose.pose.xyz.x += _setup_center_top[0]; // offset by center x coordinate
                             target_pose.pose.xyz.y += _setup_center_top[1]; // offset by center y coordinate
-                            target_pose = convert_top2bottom(target_pose);
 
                             // store the kick specs for logs (and control?)
                             bobi_msgs::KickSpecs kick_specs;
@@ -216,7 +215,7 @@ namespace bobi {
                             kick_specs.agent.pose.xyz.y /= 100.; // position in m
                             kick_specs.agent.pose.xyz.x += _setup_center_top[0]; // offset by center x coordinate
                             kick_specs.agent.pose.xyz.y += _setup_center_top[1]; // offset by center y coordinate
-                            kick_specs.agent = convert_top2bottom(kick_specs.agent);
+                            // kick_specs.agent = convert_top2bottom(kick_specs.agent);
 
                             // kick_specs.neighs.poses.resize(_individual_poses.size() - _id - 1);
                             for (size_t i = 0; i < _individual_poses.size(); ++i) {
@@ -230,7 +229,7 @@ namespace bobi {
                                 p.pose.xyz.y = _individual_poses[i].pose.xyz.y / 100.; // position in m
                                 p.pose.xyz.x += _setup_center_top[0]; // offset by center x coordinate
                                 p.pose.xyz.y += _setup_center_top[1]; // offset by center y coordinate
-                                p = convert_top2bottom(p);
+                                // p = convert_top2bottom(p);
                                 kick_specs.neighs.poses.push_back(p);
                             }
                             kick_specs.target_x = target_pose.pose.xyz.x;
@@ -248,7 +247,9 @@ namespace bobi {
                                          + std::pow(_reference_pose.xyz.y - _prev_reference_pose.xyz.y, 2))
                                 / _tau;
 
+                            target_pose = convert_top2bottom(target_pose);
                             _set_target_pose_pub.publish(target_pose);
+
                             _target_velocities.resultant = _mean_speed;
                             _set_target_vel_pub.publish(_target_velocities);
                         }
