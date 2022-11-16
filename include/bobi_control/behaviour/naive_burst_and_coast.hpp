@@ -18,6 +18,7 @@
 
 #include <Eigen/Core>
 
+#define SIMU_MODE
 #define USE_BLOCKING_REJ
 
 namespace bobi {
@@ -287,7 +288,6 @@ namespace bobi {
                 }
                 for (size_t i = 0; i < pose_vec->poses.size(); ++i) {
                     bobi_msgs::PoseStamped pose = pose_vec->poses[i];
-                    // pose = convert_top2bottom(pose);
                     pose.pose.xyz.x -= _setup_center_top[0];
                     pose.pose.xyz.y -= _setup_center_top[1];
                     pose.pose.xyz.x *= 100;
@@ -377,7 +377,6 @@ namespace bobi {
             {
                 ++_num_kicks;
 
-                // double speed_in_cm = _speeds[_id] * 100;
                 double speed_in_cm;
                 if (!_reset_current_pose) {
                     speed_in_cm = _speed;
@@ -401,11 +400,6 @@ namespace bobi {
 #ifdef USE_BLOCKING_REJ
                 do {
 #endif
-                    // int cn_idx = _id; // ! perhaps instead of using the focal id I should simple bypass usages of cn_idx
-                    // if (neighs.size()) {
-                    //     cn_idx = neighs[0]; // closest_neigh idx
-                    // }
-
                     do {
                         float prob = ran3();
                         if (prob < _params.vmem) {
@@ -484,7 +478,9 @@ namespace bobi {
 
                 for (uint i = 0; i < num_fish; ++i) {
                     if (_id == i) {
-                        // continue;
+#ifndef SIMU_MODE
+                        continue;
+#endif
                     }
 
                     distances(i) = std::sqrt(
@@ -536,10 +532,10 @@ namespace bobi {
                     float dphi_ij = std::get<3>(state)[i];
 
                     float fatt = (dij - 6.) / 3. / (1. + std::pow(dij / 20., 2));
-                    float oatt = std::sin(psi_ij) * (1. - 0.33 * std::cos(psi_ij));
-                    float eatt = 1. - 0.48 * std::cos(dphi_ij) - 0.31 * std::cos(2. * dphi_ij);
-                    // float oatt = std::sin(psi_ij) * (1. + std::cos(psi_ij));
-                    // float eatt = 1.;
+                    // float oatt = std::sin(psi_ij) * (1. - 0.33 * std::cos(psi_ij));
+                    // float eatt = 1. - 0.48 * std::cos(dphi_ij) - 0.31 * std::cos(2. * dphi_ij);
+                    float oatt = std::sin(psi_ij) * (1. + std::cos(psi_ij));
+                    float eatt = 1.;
                     float dphiatt = _params.gamma_attraction * fatt * oatt * eatt;
 
                     // float fali = (dij + 3. ) / 6. * std::exp(-std::pow(dij / 20., 2));
@@ -556,10 +552,6 @@ namespace bobi {
                         return std::abs(lv) > std::abs(rv);
                     });
                 }
-                for (auto inf : dphi_fish) {
-                    std::cout << inf << " ";
-                }
-                std::cout << std::endl;
 
                 size_t offset = std::min(dphi_fish.size(), static_cast<size_t>(_params.perceived_agents));
                 float dphi_f = std::accumulate(dphi_fish.begin(), dphi_fish.begin() + offset, 0);
@@ -573,7 +565,9 @@ namespace bobi {
                 std::vector<int> neigh_idcs;
                 for (int i = 0; i < values.rows(); ++i) {
                     if (i == kicker_idx) {
-                        // continue;
+#ifndef SIMU_MODE
+                        continue;
+#endif
                     }
                     neigh_idcs.push_back(i);
                 }
