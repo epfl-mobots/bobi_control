@@ -18,7 +18,7 @@
 
 #include <Eigen/Core>
 
-#define SIMU_MODE
+// #define SIMU_MODE
 #define USE_BLOCKING_REJ
 
 namespace bobi {
@@ -116,8 +116,8 @@ namespace bobi {
                 _reference_pose.xyz.x = 0;
                 _reference_pose.xyz.y = 0;
                 _reference_pose.rpy.yaw = 0;
-                // _reference_pose.rpy.pitch = -1;
-                _reference_pose.rpy.pitch = 0;
+                _reference_pose.rpy.pitch = -1;
+                // _reference_pose.rpy.pitch = 0;
 
                 _set_vel_pub = nh->advertise<bobi_msgs::MotorVelocities>("set_velocities", 1);
                 _set_target_pose_pub = nh->advertise<bobi_msgs::PoseStamped>("target_position", 1);
@@ -218,10 +218,13 @@ namespace bobi {
                             // kick_specs.agent = convert_top2bottom(kick_specs.agent);
 
                             // kick_specs.neighs.poses.resize(_individual_poses.size() - _id - 1);
-                            for (size_t i = 0; i < _individual_poses.size(); ++i) {
-                                if (_id == i) {
-                                    continue;
+                            for (size_t i : _most_inf_idcs) {
+#ifndef SIMU_MODE
+                                if (i == _id) {
+                                    ROS_ERROR("this should never happen");
                                 }
+#endif
+
                                 bobi_msgs::PoseStamped p;
                                 p.header = _individual_poses[i].header;
                                 p.pose.rpy.yaw = _individual_poses[i].pose.rpy.yaw;
@@ -239,6 +242,7 @@ namespace bobi {
                             kick_specs.phi = target_pose.pose.rpy.yaw;
                             kick_specs.tau = _tau;
                             kick_specs.tau0 = _params.tau0;
+                            kick_specs.perceived = _params.perceived_agents;
                             _kick_specs_pub.publish(kick_specs);
 
                             _prev_reference_pose = _reference_pose;
@@ -401,6 +405,9 @@ namespace bobi {
 #ifdef USE_BLOCKING_REJ
                 do {
 #endif
+                    float theta = std::atan2(_reference_pose.xyz.y, _reference_pose.xyz.x);
+                    float theta_w = _angle_to_pipi(_reference_pose.rpy.yaw - theta);
+
                     do {
                         float prob = ran3();
                         if (prob < _params.vmem) {
@@ -421,7 +428,7 @@ namespace bobi {
                             _speed = _params.vmin + _params.vmean * (-log(ran3() * ran3() * ran3())) / 3.;
                         }
                     } while (_speed > _params.vcut); // speed
-                    _speed = std::min(_speed, _params.vcut);
+                    // _speed = std::min(_speed, _params.vcut);
                     _speed = std::max(_speed, _params.vmin);
 
                     float dtau = _params.taumean - _params.taumin;
@@ -443,14 +450,12 @@ namespace bobi {
 #ifdef USE_BLOCKING_REJ
                     if (++_iters > _params.itermax) {
                         _iters = 0;
-                        // float dphiplus = 1.5 * (-log(ran3()));
-                        float dphiplus = 0.1 * ran3();
-                        float prob = ran3();
-                        if (prob < 0.5) {
-                            _reference_pose.rpy.yaw = _angle_to_pipi(std::atan2(_reference_pose.xyz.y, _reference_pose.xyz.x) + M_PI_2 + dphiplus);
+                        float dphiplus = 0.1 * (-log(ran3()));
+                        if (theta_w > 0) {
+                            _reference_pose.rpy.yaw = theta + M_PI_2 + dphiplus;
                         }
                         else {
-                            _reference_pose.rpy.yaw = _angle_to_pipi(std::atan2(_reference_pose.xyz.y, _reference_pose.xyz.x) - M_PI_2 - dphiplus);
+                            _reference_pose.rpy.yaw = theta - M_PI_2 - dphiplus;
                         }
                         std::tie(dphi_int, fw) = _compute_interactions(state, neighs);
                     }
@@ -527,15 +532,15 @@ namespace bobi {
 
                 // fish interaction
                 std::vector<float> dphi_fish;
-                for (int i : neighs) {
-                    float dij = std::get<0>(state)[i];
-                    float psi_ij = std::get<1>(state)[i];
-                    float dphi_ij = std::get<3>(state)[i];
+                for (int j : neighs) {
+                    float dij = std::get<0>(state)[j];
+                    float psi_ij = std::get<1>(state)[j];
+                    float dphi_ij = std::get<3>(state)[j];
 
-                    float fatt = (dij - 6.) / 3. / (1. + std::pow(dij / 20., 2));
-                    // float oatt = std::sin(psi_ij) * (1. - 0.33 * std::cos(psi_ij));
+                    float fatt = (dij - 3.) / 3. / (1. + std::pow(dij / 20., 2));
+                    float oatt = std::sin(psi_ij) * (1. - 0.33 * std::cos(psi_ij));
                     // float eatt = 1. - 0.48 * std::cos(dphi_ij) - 0.31 * std::cos(2. * dphi_ij);
-                    float oatt = std::sin(psi_ij) * (1. + std::cos(psi_ij));
+                    // float oatt = std::sin(psi_ij) * (1. + std::cos(psi_ij));
                     float eatt = 1.;
                     float dphiatt = _params.gamma_attraction * fatt * oatt * eatt;
 
@@ -548,7 +553,13 @@ namespace bobi {
                     dphi_fish.push_back(dphiatt + dphiali);
                 } // for each neighbour
 
+                _most_inf_idcs.clear();
+                _most_inf_idcs = neighs;
                 if (!_params.use_closest_individual) {
+                    std::sort(_most_inf_idcs.begin(), _most_inf_idcs.end(),
+                        [&](size_t lidx, size_t ridx) -> bool {
+                            return std::abs(dphi_fish[lidx]) < std::abs(dphi_fish[ridx]);
+                        });
                     std::sort(dphi_fish.begin(), dphi_fish.end(), [](const float& lv, const float& rv) {
                         return std::abs(lv) > std::abs(rv);
                     });
@@ -583,9 +594,7 @@ namespace bobi {
 
             defaults::RummyIndividualParams _params;
 
-            uint64_t _num_jumps;
             uint64_t _num_kicks;
-            uint64_t _num_uturn;
 
             bool _kicked;
 
@@ -594,6 +603,7 @@ namespace bobi {
             float _tau;
             float _speed;
             bobi_msgs::Pose _desired_pose;
+            std::vector<int> _most_inf_idcs;
 
             bobi_msgs::Pose _reference_pose;
             bobi_msgs::Pose _prev_reference_pose;
