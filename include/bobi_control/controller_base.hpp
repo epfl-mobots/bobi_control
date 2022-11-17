@@ -94,15 +94,12 @@ namespace bobi {
 
         double _angle_to_pipi(double angle)
         {
-            while (true) {
+            while (abs(angle) > M_PI) {
                 if (angle < -M_PI) {
                     angle += 2. * M_PI;
                 }
                 if (angle > M_PI) {
                     angle -= 2. * M_PI;
-                }
-                if (abs(angle) <= M_PI) {
-                    break;
                 }
             }
             return angle;
