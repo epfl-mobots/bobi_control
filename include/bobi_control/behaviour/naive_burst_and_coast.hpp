@@ -155,8 +155,12 @@ namespace bobi {
 
                     _pose_in_cm = _individual_poses[_id];
                     if (_reference_pose.rpy.pitch == -1 || _reset_current_pose) {
-                        _reference_pose = _pose_in_cm.pose;
-                        _reference_pose.rpy.pitch = 0;
+                        bobi_msgs::PoseStamped rpose = convert_bottom2top(_pose);
+                        double lure_vs_robot_dist = euc_distance(_individual_poses[_id], rpose);
+                        if (lure_vs_robot_dist > 7.) {
+                            _reference_pose = _pose_in_cm.pose;
+                            _reference_pose.rpy.pitch = 0;
+                        }
                     }
 
                     if (!_lure_rescue) {
