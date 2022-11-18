@@ -1,9 +1,9 @@
-#ifndef NAIVE_BURST_AND_COAST_HPP
-#define NAIVE_BURST_AND_COAST_HPP
+#ifndef BOBI_BURST_AND_COAST_HPP
+#define BOBI_BURST_AND_COAST_HPP
 
 #include <bobi_control/controller_base.hpp>
 
-#include <bobi_control/NaiveBurstAndCoastConfig.h>
+#include <bobi_control/BurstAndCoastConfig.h>
 
 #include <bobi_msgs/MaxAcceleration.h>
 #include <bobi_msgs/DutyCycle.h>
@@ -73,9 +73,9 @@ namespace bobi {
         using state_t = std::tuple<Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd>;
         using const_state_t = const std::tuple<Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd>&;
 
-        class NaiveBurstAndCoast : public ControllerBase {
+        class BurstAndCoast : public ControllerBase {
         public:
-            NaiveBurstAndCoast(std::shared_ptr<ros::NodeHandle> nh, int id, std::string pose_topic, const float wheel_radius, const float wheel_distance, defaults::RummyIndividualParams params = defaults::RummyIndividualParams())
+            BurstAndCoast(std::shared_ptr<ros::NodeHandle> nh, int id, std::string pose_topic, const float wheel_radius, const float wheel_distance, defaults::RummyIndividualParams params = defaults::RummyIndividualParams())
                 : ControllerBase(nh, id, pose_topic),
                   _wheel_radius(wheel_radius),
                   _wheel_distance(wheel_distance),
@@ -91,8 +91,8 @@ namespace bobi {
                   _reset_current_pose(false)
             {
                 // Initialize ROS interface
-                dynamic_reconfigure::Server<bobi_control::NaiveBurstAndCoastConfig>::CallbackType f;
-                f = boost::bind(&NaiveBurstAndCoast::_config_cb, this, _1, _2);
+                dynamic_reconfigure::Server<bobi_control::BurstAndCoastConfig>::CallbackType f;
+                f = boost::bind(&BurstAndCoast::_config_cb, this, _1, _2);
                 _cfg_server.setCallback(f);
 
                 assert(nh->getParam("top_camera/pix2m", _top_pix2m));
@@ -125,8 +125,8 @@ namespace bobi {
                 _kick_specs_pub = nh->advertise<bobi_msgs::KickSpecs>("kick_specs", 1);
 
                 // _set_vel_pub = nh->advertise<bobi_msgs::MotorVelocities>("target_velocities", 1);
-                _cur_pose_sub = nh->subscribe("filtered_poses", 1, &NaiveBurstAndCoast::_individual_poses_cb, this);
-                _speed_estimates_sub = nh->subscribe("speed_estimates", 1, &NaiveBurstAndCoast::_speed_estimates_cb, this);
+                _cur_pose_sub = nh->subscribe("filtered_poses", 1, &BurstAndCoast::_individual_poses_cb, this);
+                _speed_estimates_sub = nh->subscribe("speed_estimates", 1, &BurstAndCoast::_speed_estimates_cb, this);
 
                 _max_accel_cli = nh->serviceClient<bobi_msgs::MaxAcceleration>("set_max_acceleration");
                 _set_duty_cycle_cli = nh->serviceClient<bobi_msgs::DutyCycle>("set_duty_cycle");
@@ -314,7 +314,7 @@ namespace bobi {
                 }
             }
 
-            void _config_cb(bobi_control::NaiveBurstAndCoastConfig& config, uint32_t level)
+            void _config_cb(bobi_control::BurstAndCoastConfig& config, uint32_t level)
             {
                 ROS_INFO("Updated %s config", __func__);
                 _params.radius = config.radius * 100;
@@ -341,7 +341,7 @@ namespace bobi {
                 _params.reset_current_pose = config.reset_current_pose;
             }
 
-            dynamic_reconfigure::Server<bobi_control::NaiveBurstAndCoastConfig> _cfg_server;
+            dynamic_reconfigure::Server<bobi_control::BurstAndCoastConfig> _cfg_server;
             ros::Publisher _set_vel_pub;
             ros::Publisher _set_target_pose_pub;
             ros::Publisher _set_target_vel_pub;

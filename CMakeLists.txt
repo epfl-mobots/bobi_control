@@ -21,7 +21,7 @@ generate_dynamic_reconfigure_options(
   config/PositionController.cfg
   config/LinearSpeedController.cfg
   # config/AstolfiController.cfg
-  config/behaviour/NaiveBurstAndCoast.cfg
+  config/behaviour/BurstAndCoast.cfg
 )
 
 catkin_package(
@@ -53,9 +53,9 @@ add_dependencies(linear_speed_controller_node ${catkin_EXPORTED_TARGETS} ${PROJE
 # target_link_libraries(astolfi_controller_node ${OpenCV_LIBS} ${catkin_LIBRARIES})
 # add_dependencies(astolfi_controller_node ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg bobi_msgs_generate_messages_cpp)
 
-add_executable(naive_burst_and_coast_node src/behaviour/naive_burst_and_coast.cpp)
-target_link_libraries(naive_burst_and_coast_node ${OpenCV_LIBS} ${catkin_LIBRARIES})
-add_dependencies(naive_burst_and_coast_node ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg bobi_msgs_generate_messages_cpp)
+add_executable(burst_and_coast_node src/behaviour/burst_and_coast.cpp)
+target_link_libraries(burst_and_coast_node ${OpenCV_LIBS} ${catkin_LIBRARIES})
+add_dependencies(burst_and_coast_node ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg bobi_msgs_generate_messages_cpp)
 
 add_executable(circular_trajectory_node src/test/circular_trajectory_node.cpp)
 target_link_libraries(circular_trajectory_node ${OpenCV_LIBS} ${catkin_LIBRARIES})

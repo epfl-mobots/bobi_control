@@ -6,7 +6,7 @@
                         <!-- pose_topic: "filtered_poses" -->
             wheel_radius: 0.01
             wheel_distance: 0.0451
-            naive_burst_and_coast:
+            burst_and_coast:
                 rate: 30
         </rosparam>
 
@@ -17,6 +17,6 @@
             wheel_distance: 0.0475      
         </rosparam> -->
 
-        <node name="naive_burst_and_coast_node" pkg="bobi_control" type="naive_burst_and_coast_node" output="screen"/>
+        <node name="burst_and_coast_node" pkg="bobi_control" type="burst_and_coast_node" output="screen"/>
     </group>
 </launch>

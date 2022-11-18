@@ -1,13 +1,13 @@
 #include <ros/ros.h>
 
-#include <bobi_control/behaviour/naive_burst_and_coast.hpp>
+#include <bobi_control/behaviour/burst_and_coast.hpp>
 
 using namespace bobi;
 using namespace behaviour;
 
 int main(int argc, char** argv)
 {
-    ros::init(argc, argv, "naive_burst_and_coast_node");
+    ros::init(argc, argv, "burst_and_coast_node");
     std::shared_ptr<ros::NodeHandle> nh(new ros::NodeHandle());
 
     int id;
@@ -27,10 +27,10 @@ int main(int argc, char** argv)
 
     ROS_INFO("Robot %d controller using %s topic for pose info", id, pose_topic.c_str());
 
-    NaiveBurstAndCoast ctrl(nh, id, pose_topic, wheel_radius, wheel_distance);
+    BurstAndCoast ctrl(nh, id, pose_topic, wheel_radius, wheel_distance);
 
     double rate;
-    nh->param<double>("naive_burst_and_coast/rate", rate, 30);
+    nh->param<double>("burst_and_coast/rate", rate, 30);
     ros::Rate loop_rate(rate);
     while (ros::ok()) {
         ctrl.spin_once();
