@@ -13,6 +13,8 @@ find_package(
   dynamic_reconfigure
 )
 find_package(Eigen3 REQUIRED)
+find_package(OpenCV REQUIRED)
+find_package(bobi_vision REQUIRED)
 
 generate_dynamic_reconfigure_options(
   config/VelocityController.cfg
@@ -31,36 +33,38 @@ include_directories(
   include
   ${catkin_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIRS}
+  ${OpenCV_INCLUDE_DIRS}
+  ${bobi_vision_INCLUDE_DIRS}
 )
 
 add_executable(velocity_controller_node src/velocity_controller_node.cpp)
-target_link_libraries(velocity_controller_node ${catkin_LIBRARIES})
+target_link_libraries(velocity_controller_node ${OpenCV_LIBS} ${catkin_LIBRARIES})
 add_dependencies(velocity_controller_node ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg bobi_msgs_generate_messages_cpp)
 
 add_executable(position_controller_node src/position_controller_node.cpp)
-target_link_libraries(position_controller_node ${catkin_LIBRARIES})
+target_link_libraries(position_controller_node ${OpenCV_LIBS} ${catkin_LIBRARIES})
 add_dependencies(position_controller_node ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg bobi_msgs_generate_messages_cpp)
 
 add_executable(linear_speed_controller_node src/linear_speed_controller_node.cpp)
-target_link_libraries(linear_speed_controller_node ${catkin_LIBRARIES})
+target_link_libraries(linear_speed_controller_node ${OpenCV_LIBS} ${catkin_LIBRARIES})
 add_dependencies(linear_speed_controller_node ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg bobi_msgs_generate_messages_cpp)
 
 # add_executable(astolfi_controller_node src/astolfi_controller_node.cpp)
-# target_link_libraries(astolfi_controller_node ${catkin_LIBRARIES})
+# target_link_libraries(astolfi_controller_node ${OpenCV_LIBS} ${catkin_LIBRARIES})
 # add_dependencies(astolfi_controller_node ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg bobi_msgs_generate_messages_cpp)
 
 add_executable(naive_burst_and_coast_node src/behaviour/naive_burst_and_coast.cpp)
-target_link_libraries(naive_burst_and_coast_node ${catkin_LIBRARIES})
+target_link_libraries(naive_burst_and_coast_node ${OpenCV_LIBS} ${catkin_LIBRARIES})
 add_dependencies(naive_burst_and_coast_node ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg bobi_msgs_generate_messages_cpp)
 
 add_executable(circular_trajectory_node src/test/circular_trajectory_node.cpp)
-target_link_libraries(circular_trajectory_node ${catkin_LIBRARIES})
+target_link_libraries(circular_trajectory_node ${OpenCV_LIBS} ${catkin_LIBRARIES})
 add_dependencies(circular_trajectory_node ${catkin_EXPORTED_TARGETS} bobi_msgs_generate_messages_cpp)
 
 add_executable(eights_node src/test/eights_node.cpp)
-target_link_libraries(eights_node ${catkin_LIBRARIES})
+target_link_libraries(eights_node ${OpenCV_LIBS} ${catkin_LIBRARIES})
 add_dependencies(eights_node ${catkin_EXPORTED_TARGETS} bobi_msgs_generate_messages_cpp)
 
 add_executable(straight_line_node src/test/straight_line_node.cpp)
-target_link_libraries(straight_line_node ${catkin_LIBRARIES})
+target_link_libraries(straight_line_node ${OpenCV_LIBS} ${catkin_LIBRARIES})
 add_dependencies(straight_line_node ${catkin_EXPORTED_TARGETS} bobi_msgs_generate_messages_cpp)
