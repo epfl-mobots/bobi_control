@@ -75,12 +75,8 @@ namespace bobi {
 
         class BurstAndCoast : public ControllerBase {
         public:
-            BurstAndCoast(std::shared_ptr<ros::NodeHandle> nh, int id, std::string pose_topic, const float wheel_radius, const float wheel_distance, defaults::RummyIndividualParams params = defaults::RummyIndividualParams())
+            BurstAndCoast(std::shared_ptr<ros::NodeHandle> nh, int id, std::string pose_topic, defaults::RummyIndividualParams params = defaults::RummyIndividualParams())
                 : ControllerBase(nh, id, pose_topic),
-                  _wheel_radius(wheel_radius),
-                  _wheel_distance(wheel_distance),
-                  _rotating(false),
-                  _using_robot_motor_feedback(false),
                   _params(params),
                   _current_time(0.),
                   _setup_center_top{0., 0.},
@@ -363,11 +359,6 @@ namespace bobi {
             float _mean_speed;
             bool _reset_current_pose;
             ros::Time _last_pose_stamp;
-
-            const float _wheel_radius;
-            const float _wheel_distance;
-            bool _rotating;
-            bool _using_robot_motor_feedback;
 
             bobi_msgs::PoseStamped _pose_in_cm;
             bobi_msgs::MotorVelocities _new_velocities;
