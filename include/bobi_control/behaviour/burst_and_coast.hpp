@@ -54,6 +54,7 @@ namespace bobi {
                 float tau0 = 0.8;
 
                 bool reset_current_pose = false;
+                bool use_reference_speed = true;
 
                 // simu
                 int itermax = 50;
@@ -335,6 +336,7 @@ namespace bobi {
                 _params.tau0 = config.tau0;
                 _params.itermax = config.itermax;
                 _params.reset_current_pose = config.reset_current_pose;
+                _params.use_reference_speed = config.use_reference_speed;
             }
 
             dynamic_reconfigure::Server<bobi_control::BurstAndCoastConfig> _cfg_server;
@@ -378,11 +380,11 @@ namespace bobi {
                 ++_num_kicks;
 
                 double speed_in_cm;
-                if (!_reset_current_pose) {
-                    speed_in_cm = _speed;
+                if (_reset_current_pose || _params.use_reference_speed) {
+                    speed_in_cm = _speeds[_id] * 100;
                 }
                 else {
-                    speed_in_cm = _speeds[_id] * 100;
+                    speed_in_cm = _speed;
                 }
 
                 auto state = _compute_state();
