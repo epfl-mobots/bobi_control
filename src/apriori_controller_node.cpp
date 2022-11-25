@@ -1,12 +1,12 @@
 #include <ros/ros.h>
 
-#include <bobi_control/linear_speed_control.hpp>
+#include <bobi_control/apriori_control.hpp>
 
 using namespace bobi;
 
 int main(int argc, char** argv)
 {
-    ros::init(argc, argv, "linear_speed_controller_node");
+    ros::init(argc, argv, "apriori_controller_node");
     std::shared_ptr<ros::NodeHandle> nh(new ros::NodeHandle());
 
     int id;
@@ -29,7 +29,7 @@ int main(int argc, char** argv)
     LinearSpeedControl ctrl(nh, id, pose_topic, wheel_radius, wheel_distance);
 
     int rate;
-    nh->param<int>("linear_speed_control/rate", rate, 30);
+    nh->param<int>("apriori_control/rate", rate, 30);
     ros::Rate loop_rate(rate);
     while (ros::ok()) {
         ctrl.spin_once();

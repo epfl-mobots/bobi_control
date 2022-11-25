@@ -4,7 +4,7 @@
 #include <bobi_control/controller_base.hpp>
 
 #include <dynamic_reconfigure/server.h>
-#include <bobi_control/LinearSpeedControlConfig.h>
+#include <bobi_control/APrioriControlConfig.h>
 
 #include <bobi_msgs/MaxAcceleration.h>
 #include <bobi_msgs/DutyCycle.h>
@@ -23,7 +23,7 @@ namespace bobi {
               _rotating(false),
               _using_robot_motor_feedback(false)
         {
-            dynamic_reconfigure::Server<bobi_control::LinearSpeedControlConfig>::CallbackType f;
+            dynamic_reconfigure::Server<bobi_control::APrioriControlConfig>::CallbackType f;
             f = boost::bind(&LinearSpeedControl::_config_cb, this, _1, _2);
             _cfg_server.setCallback(f);
 
@@ -33,6 +33,10 @@ namespace bobi {
 
             _max_accel_cli = nh->serviceClient<bobi_msgs::MaxAcceleration>("set_max_acceleration");
             _set_duty_cycle_cli = nh->serviceClient<bobi_msgs::DutyCycle>("set_duty_cycle");
+
+            int rate;
+            nh->param<int>("position_control/rate", rate, 30);
+            _dt_ideal = 1. / rate;
         }
 
         void spin_once()
@@ -57,41 +61,40 @@ namespace bobi {
                 }
 
                 bool use_mouse_wpt = false;
+                if (_target_velocities.resultant == 0) {
+                    use_mouse_wpt = true;
+                }
+                else if (_target_velocities.resultant > 0) {
+                    use_mouse_wpt = false;
+                }
+
                 if (_target_position.pose.xyz.x != _prev_target.pose.xyz.x
                     || _target_position.pose.xyz.y != _prev_target.pose.xyz.y) {
                     _integral = {0., 0.};
                     _prev_error = {0., 0.};
                     _rotating = false;
-                    if (_target_velocities.resultant == 0) {
-                        use_mouse_wpt = true;
-                    }
                 }
 
                 if (_pose.pose.xyz.x == _prev_pose.pose.xyz.x
                     && _pose.pose.xyz.y == _prev_pose.pose.xyz.y
                     && _prev_v[0] != 0 && _prev_v[1] != 0) {
-                    _pose.pose.xyz.x += _prev_v[0] * _dt;
-                    _pose.pose.xyz.y += _prev_v[1] * _dt;
+                    _pose.pose.xyz.x += _prev_v[0] * _dt_ideal;
+                    _pose.pose.xyz.y += _prev_v[1] * _dt_ideal;
                 }
 
                 double yaw = _pose.pose.rpy.yaw;
-                double vx = ((_pose.pose.xyz.x - _prev_pose.pose.xyz.x) / _dt);
-                double vy = ((_pose.pose.xyz.y - _prev_pose.pose.xyz.y) / _dt);
+                double vx = ((_pose.pose.xyz.x - _prev_pose.pose.xyz.x) / _dt_ideal);
+                double vy = ((_pose.pose.xyz.y - _prev_pose.pose.xyz.y) / _dt_ideal);
                 double v = std::sqrt(std::pow(vy, 2.) + std::pow(vx, 2.));
                 double motor_v = std::sqrt(std::pow(_current_velocities.left, 2.) + std::pow(_current_velocities.right, 2.));
                 _prev_v = {vx, vy, v};
-                double w = _angle_to_pipi(_pose.pose.rpy.yaw - _prev_pose.pose.rpy.yaw) / _dt;
+                double w = _angle_to_pipi(_pose.pose.rpy.yaw - _prev_pose.pose.rpy.yaw) / _dt_ideal;
                 const float l = _wheel_distance;
                 const float radius = _wheel_radius;
                 double theta = _angle_to_pipi(atan2(_target_position.pose.xyz.y - _pose.pose.xyz.y, _target_position.pose.xyz.x - _pose.pose.xyz.x));
 
                 std::array<double, 2> error;
-                if (use_mouse_wpt) {
-                    error[0] = euc_distance(_pose, _target_position);
-                }
-                else {
-                    error[0] = std::abs(motor_v - _target_velocities.resultant);
-                }
+                error[0] = euc_distance(_pose, _target_position);
                 error[1] = _angle_to_pipi(yaw - theta);
 
                 if (abs(error[1]) > _rotate_in_place_threshold_ub) {
@@ -115,22 +118,29 @@ namespace bobi {
                 p[1] = _Kp[1] * error[1];
 
                 // integral
-                _integral[0] += error[0] * _dt;
-                _integral[1] += error[1] * _dt;
+                _integral[0] += error[0] * _dt_ideal;
+                _integral[1] += error[1] * _dt_ideal;
                 std::array<double, 2> i;
                 i[0] = _Ki[0] * _integral[0];
                 i[1] = _Ki[1] * _integral[1];
 
                 // derivative
                 std::array<double, 2> d;
-                d[0] = _Kd[0] * (error[0] - _prev_error[0]) / _dt;
-                d[1] = _Kd[1] * (error[1] - _prev_error[1]) / _dt;
+                d[0] = _Kd[0] * (error[0] - _prev_error[0]) / _dt_ideal;
+                d[1] = _Kd[1] * (error[1] - _prev_error[1]) / _dt_ideal;
 
                 // clipping values
-                // double v_hat = _clip(((p[0] + i[0] + d[0]) / _scaler[0]) / _dt, 0);
-                double v_hat = _clip(((p[0] + i[0] + d[0]) * _scaler[0]), 0);
-                // double v_hat = _clip(_mean_speed, 0);
-                double w_hat = _clip(((p[1] + i[1] + d[1]) * _scaler[1]) / _dt, 1);
+                double v_hat;
+                if (use_mouse_wpt) {
+                    p[0] = 0.08 * error[0];
+                    double pid_v = ((p[0] + i[0] + d[0]) / _scaler[0]) / _dt_ideal;
+                    v_hat = _clip(pid_v, 0);
+                }
+                else {
+                    double pid_v = ((p[0] + i[0] + d[0]) / _scaler[0]) / _dt_ideal;
+                    v_hat = _clip(pid_v + _target_velocities.resultant, 0);
+                }
+                double w_hat = _clip(((p[1] + i[1] + d[1]) * _scaler[1]) / _dt_ideal, 1);
 
                 if (_rotating) {
                     v_hat = 0.;
@@ -149,7 +159,7 @@ namespace bobi {
                     }
                     _prev_v = {vx, vy, v};
 
-                    ROS_INFO("--- dt = %f", _dt);
+                    ROS_INFO("--- dt = %f", _dt_ideal);
                     ROS_INFO("Current velocities(left, right) = (%f, %f)", _current_velocities.left, _current_velocities.right);
                     ROS_INFO("Current velocities(v, w) = (%f, %f)", v, w);
                     ROS_INFO("Target position(x, y) = (%f, %f)", _target_position.pose.xyz.x, _target_position.pose.xyz.y);
@@ -173,7 +183,7 @@ namespace bobi {
             _current_velocities.right = motor_velocities->right / 100.;
         }
 
-        void _config_cb(bobi_control::LinearSpeedControlConfig& config, uint32_t level)
+        void _config_cb(bobi_control::APrioriControlConfig& config, uint32_t level)
         {
             ROS_INFO("Updated %s config", __func__);
             _Kp = {config.Kp_v, config.Kp_w};
@@ -195,7 +205,7 @@ namespace bobi {
             return val;
         }
 
-        dynamic_reconfigure::Server<bobi_control::LinearSpeedControlConfig> _cfg_server;
+        dynamic_reconfigure::Server<bobi_control::APrioriControlConfig> _cfg_server;
         ros::Publisher _set_vel_pub;
         ros::Subscriber _cur_vel_sub;
 
@@ -216,6 +226,7 @@ namespace bobi {
         const float _wheel_distance;
         bool _rotating;
         bool _using_robot_motor_feedback;
+        float _dt_ideal;
 
         bobi_msgs::PoseStamped _current_position;
         bobi_msgs::MotorVelocities _new_velocities;

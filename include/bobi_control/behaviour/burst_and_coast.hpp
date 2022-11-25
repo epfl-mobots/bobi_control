@@ -203,7 +203,6 @@ namespace bobi {
                             target_pose.pose = _desired_pose;
 
                             // Take care of scale
-                            _mean_speed /= 100.; // speed in m/s
                             target_pose.pose.xyz.x /= 100.; // position in m
                             target_pose.pose.xyz.y /= 100.; // position in m
                             target_pose.pose.xyz.x += _setup_center_top[0]; // offset by center x coordinate
@@ -252,11 +251,12 @@ namespace bobi {
                                          + std::pow(_reference_pose.xyz.y - _prev_reference_pose.xyz.y, 2))
                                 / _tau;
 
-                            target_pose = convert_top2bottom(target_pose);
-                            _set_target_pose_pub.publish(target_pose);
-
+                            _mean_speed = _speed / 100.; // speed in m/s
                             _target_velocities.resultant = _mean_speed;
                             _set_target_vel_pub.publish(_target_velocities);
+
+                            target_pose = convert_top2bottom(target_pose);
+                            _set_target_pose_pub.publish(target_pose);
                         }
                     }
                     else {
