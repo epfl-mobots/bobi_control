@@ -6,6 +6,7 @@
 #include <bobi_msgs/PoseVec.h>
 #include <bobi_msgs/MotorVelocities.h>
 #include <bobi_msgs/ConvertCoordinates.h>
+#include <bobi_msgs/TargetPose.h>
 #include <bobi_vision/coordinate_mapper.hpp>
 
 #include <cassert>
@@ -19,12 +20,14 @@ namespace bobi {
               _ros_dt(0),
               _dt(0),
               _id(id),
+              _desired_speed(0.),
+              _desired_acceleration(0.),
               _pose_topic(pose_topic),
               _prev_stamp(ros::Time::now())
         {
             _pose_sub = _nh->subscribe(_pose_topic, 1, &ControllerBase::_pose_cb, this);
             _target_vel_sub = _nh->subscribe("target_velocities", 1, &ControllerBase::_target_velocities_cb, this);
-            _target_pos_sub = _nh->subscribe("target_position", 1, &ControllerBase::_target_position_cb, this);
+            _target_pos_sub = _nh->subscribe("target_position", 1, &ControllerBase::_target_pose_cb, this);
 
             std::tie(_points_bottom, _points_top, _top_cfg, _bottom_cfg) = init_coordinate_mapper(nh);
             _bottom2top = std::shared_ptr<CoordinateMapper>(new CoordinateMapper(_nh,
@@ -49,9 +52,9 @@ namespace bobi {
 
             _target_velocities.left = 0.;
             _target_velocities.right = 0.;
-            _target_position.pose.xyz.x = -1;
-            _target_position.pose.xyz.y = -1;
-            _target_position.pose.rpy.yaw = 0.;
+            _target_pose.pose.xyz.x = -1;
+            _target_pose.pose.xyz.y = -1;
+            _target_pose.pose.rpy.yaw = 0.;
         }
 
         virtual void spin_once()
@@ -124,10 +127,10 @@ namespace bobi {
             _target_velocities = *msg;
         }
 
-        void _target_position_cb(const bobi_msgs::PoseStamped::ConstPtr& msg)
+        void _target_pose_cb(const bobi_msgs::TargetPose::ConstPtr& msg)
         {
             std::lock_guard<std::mutex> guard(_tpos_mtx);
-            _target_position = *msg;
+            _target_pose = msg->target;
         }
 
         std::shared_ptr<ros::NodeHandle> _nh;
@@ -147,7 +150,9 @@ namespace bobi {
 
         ros::Subscriber _target_pos_sub;
         std::mutex _tpos_mtx;
-        bobi_msgs::PoseStamped _target_position;
+        bobi_msgs::PoseStamped _target_pose;
+        float _desired_speed;
+        float _desired_acceleration;
 
         ros::Subscriber _pose_sub;
         std::mutex _pose_mtx;

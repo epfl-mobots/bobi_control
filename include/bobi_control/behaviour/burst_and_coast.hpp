@@ -11,6 +11,7 @@
 #include <bobi_msgs/PoseVec.h>
 #include <bobi_msgs/SpeedEstimateVec.h>
 #include <bobi_msgs/KickSpecs.h>
+#include <bobi_msgs/TargetPose.h>
 
 #include <tools/random/random_generator.hpp>
 
@@ -117,7 +118,7 @@ namespace bobi {
                 // _reference_pose.rpy.pitch = 0;
 
                 _set_vel_pub = nh->advertise<bobi_msgs::MotorVelocities>("set_velocities", 1);
-                _set_target_pose_pub = nh->advertise<bobi_msgs::PoseStamped>("target_position", 1);
+                _set_target_pose_pub = nh->advertise<bobi_msgs::TargetPose>("target_position", 1);
                 _set_target_vel_pub = nh->advertise<bobi_msgs::MotorVelocities>("target_velocities", 1);
                 _kick_specs_pub = nh->advertise<bobi_msgs::KickSpecs>("kick_specs", 1);
 
@@ -247,16 +248,21 @@ namespace bobi {
 
                             _prev_reference_pose = _reference_pose;
                             _reference_pose = _desired_pose;
+                            float prev_speed = _speed;
                             _speed = std::sqrt(std::pow(_reference_pose.xyz.x - _prev_reference_pose.xyz.x, 2)
                                          + std::pow(_reference_pose.xyz.y - _prev_reference_pose.xyz.y, 2))
                                 / _tau;
 
                             _mean_speed = _speed / 100.; // speed in m/s
-                            _target_velocities.resultant = _mean_speed;
-                            _set_target_vel_pub.publish(_target_velocities);
+                            // _target_velocities.resultant = _mean_speed;
+                            // _set_target_vel_pub.publish(_target_velocities);
 
                             target_pose = convert_top2bottom(target_pose);
-                            _set_target_pose_pub.publish(target_pose);
+                            bobi_msgs::TargetPose t;
+                            t.target = target_pose;
+                            t.desired_speed = _mean_speed;
+                            t.desired_acceleration = std::abs(_speed - prev_speed) / _tau / 100.;
+                            _set_target_pose_pub.publish(t);
                         }
                     }
                     else {

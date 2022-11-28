@@ -51,8 +51,8 @@ namespace bobi {
                     return std::sqrt(std::pow(lpose.pose.xyz.x - rpose.pose.xyz.x, 2.) + std::pow(lpose.pose.xyz.y - rpose.pose.xyz.y, 2.));
                 };
 
-                if (euc_distance(_pose, _target_position) < _distance_threshold
-                    || (_target_position.pose.xyz.x < 0 || _target_position.pose.xyz.y < 0)) {
+                if (euc_distance(_pose, _target_pose) < _distance_threshold
+                    || (_target_pose.pose.xyz.x < 0 || _target_pose.pose.xyz.y < 0)) {
                     _set_vel_pub.publish(bobi_msgs::MotorVelocities());
                     _integral = {0., 0.};
                     _prev_error = {0., 0.};
@@ -61,15 +61,15 @@ namespace bobi {
                 }
 
                 bool use_mouse_wpt = false;
-                if (_target_velocities.resultant == 0) {
+                if (_desired_speed == 0) {
                     use_mouse_wpt = true;
                 }
-                else if (_target_velocities.resultant > 0) {
+                else if (_desired_speed > 0) {
                     use_mouse_wpt = false;
                 }
 
-                if (_target_position.pose.xyz.x != _prev_target.pose.xyz.x
-                    || _target_position.pose.xyz.y != _prev_target.pose.xyz.y) {
+                if (_target_pose.pose.xyz.x != _prev_target.pose.xyz.x
+                    || _target_pose.pose.xyz.y != _prev_target.pose.xyz.y) {
                     _integral = {0., 0.};
                     _prev_error = {0., 0.};
                     _rotating = false;
@@ -91,10 +91,10 @@ namespace bobi {
                 double w = _angle_to_pipi(_pose.pose.rpy.yaw - _prev_pose.pose.rpy.yaw) / _dt_ideal;
                 const float l = _wheel_distance;
                 const float radius = _wheel_radius;
-                double theta = _angle_to_pipi(atan2(_target_position.pose.xyz.y - _pose.pose.xyz.y, _target_position.pose.xyz.x - _pose.pose.xyz.x));
+                double theta = _angle_to_pipi(atan2(_target_pose.pose.xyz.y - _pose.pose.xyz.y, _target_pose.pose.xyz.x - _pose.pose.xyz.x));
 
                 std::array<double, 2> error;
-                error[0] = euc_distance(_pose, _target_position);
+                error[0] = euc_distance(_pose, _target_pose);
                 error[1] = _angle_to_pipi(yaw - theta);
 
                 if (abs(error[1]) > _rotate_in_place_threshold_ub) {
@@ -132,13 +132,13 @@ namespace bobi {
                 // clipping values
                 double v_hat;
                 if (use_mouse_wpt) {
-                    p[0] = 0.08 * error[0];
+                    p[0] = 0.0 * error[0];
                     double pid_v = ((p[0] + i[0] + d[0]) / _scaler[0]) / _dt_ideal;
                     v_hat = _clip(pid_v, 0);
                 }
                 else {
                     double pid_v = ((p[0] + i[0] + d[0]) / _scaler[0]) / _dt_ideal;
-                    v_hat = _clip(pid_v + _target_velocities.resultant, 0);
+                    v_hat = _clip(pid_v + _desired_speed, 0);
                 }
                 double w_hat = _clip(((p[1] + i[1] + d[1]) * _scaler[1]) / _dt_ideal, 1);
 
@@ -148,6 +148,7 @@ namespace bobi {
 
                 _new_velocities.left = (2 * v_hat - w_hat * l) / 2.;
                 _new_velocities.right = (2 * v_hat + w_hat * l) / 2.;
+                _new_velocities.acceleration = _desired_acceleration;
 
                 if (_verbose) {
                     if (!_using_robot_motor_feedback) {
@@ -162,7 +163,7 @@ namespace bobi {
                     ROS_INFO("--- dt = %f", _dt_ideal);
                     ROS_INFO("Current velocities(left, right) = (%f, %f)", _current_velocities.left, _current_velocities.right);
                     ROS_INFO("Current velocities(v, w) = (%f, %f)", v, w);
-                    ROS_INFO("Target position(x, y) = (%f, %f)", _target_position.pose.xyz.x, _target_position.pose.xyz.y);
+                    ROS_INFO("Target position(x, y) = (%f, %f)", _target_pose.pose.xyz.x, _target_pose.pose.xyz.y);
                     ROS_INFO("Current position(x, y) = (%f, %f)", _pose.pose.xyz.x, _pose.pose.xyz.y);
                     ROS_INFO("New velocities(left, right) = (%f, %f)", _new_velocities.left, _new_velocities.right);
                     ROS_INFO("New velocities(v, w) = (%f, %f)", v_hat, w_hat);
@@ -171,7 +172,7 @@ namespace bobi {
 
                 _set_vel_pub.publish(_new_velocities);
                 _prev_error = error;
-                _prev_target = _target_position;
+                _prev_target = _target_pose;
             }
         }
 
