@@ -12,9 +12,9 @@
 #include <chrono>
 
 namespace bobi {
-    class LinearSpeedControl : public ControllerBase {
+    class APrioriControl : public ControllerBase {
     public:
-        LinearSpeedControl(std::shared_ptr<ros::NodeHandle> nh, int id, std::string pose_topic, const float wheel_radius, const float wheel_distance)
+        APrioriControl(std::shared_ptr<ros::NodeHandle> nh, int id, std::string pose_topic, const float wheel_radius, const float wheel_distance)
             : ControllerBase(nh, id, pose_topic),
               _wheel_radius(wheel_radius),
               _wheel_distance(wheel_distance),
@@ -24,19 +24,21 @@ namespace bobi {
               _using_robot_motor_feedback(false)
         {
             dynamic_reconfigure::Server<bobi_control::APrioriControlConfig>::CallbackType f;
-            f = boost::bind(&LinearSpeedControl::_config_cb, this, _1, _2);
+            f = boost::bind(&APrioriControl::_config_cb, this, _1, _2);
             _cfg_server.setCallback(f);
 
             _set_vel_pub = nh->advertise<bobi_msgs::MotorVelocities>("set_velocities", 1);
             // _set_vel_pub = nh->advertise<bobi_msgs::MotorVelocities>("target_velocities", 1);
-            _cur_vel_sub = nh->subscribe("current_velocities", 1, &LinearSpeedControl::_current_vel_cb, this);
+            _cur_vel_sub = nh->subscribe("current_velocities", 1, &APrioriControl::_current_vel_cb, this);
 
             _max_accel_cli = nh->serviceClient<bobi_msgs::MaxAcceleration>("set_max_acceleration");
             _set_duty_cycle_cli = nh->serviceClient<bobi_msgs::DutyCycle>("set_duty_cycle");
 
             int rate;
-            nh->param<int>("position_control/rate", rate, 30);
+            nh->param<int>("apriori_control/rate", rate, 30);
             _dt_ideal = 1. / rate;
+
+            nh->param<double>("apriori_control/rotation_accel", _rotation_acceleration, 1.5);
         }
 
         void spin_once()
@@ -144,11 +146,15 @@ namespace bobi {
 
                 if (_rotating) {
                     v_hat = 0.;
+                    _new_velocities.acceleration = _rotation_acceleration;
+                }
+                else {
+                    // _new_velocities.acceleration = 0;
+                    _new_velocities.acceleration = _desired_acceleration;
                 }
 
                 _new_velocities.left = (2 * v_hat - w_hat * l) / 2.;
                 _new_velocities.right = (2 * v_hat + w_hat * l) / 2.;
-                _new_velocities.acceleration = _desired_acceleration;
 
                 if (_verbose) {
                     if (!_using_robot_motor_feedback) {
@@ -228,6 +234,7 @@ namespace bobi {
         bool _rotating;
         bool _using_robot_motor_feedback;
         float _dt_ideal;
+        double _rotation_acceleration;
 
         bobi_msgs::PoseStamped _current_position;
         bobi_msgs::MotorVelocities _new_velocities;

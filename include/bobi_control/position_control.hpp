@@ -37,6 +37,8 @@ namespace bobi {
             int rate;
             nh->param<int>("position_control/rate", rate, 30);
             _dt_ideal = 1. / rate;
+
+            nh->param<double>("position_control/rotation_accel", _rotation_acceleration, 1.5);
         }
 
         void spin_once()
@@ -126,6 +128,10 @@ namespace bobi {
 
                 if (_rotating) {
                     v_hat = 0.;
+                    _new_velocities.acceleration = _rotation_acceleration;
+                }
+                else {
+                    _new_velocities.acceleration = 0;
                 }
 
                 _new_velocities.left = (2 * v_hat - w_hat * l) / 2.;
@@ -209,6 +215,7 @@ namespace bobi {
         const float _wheel_distance;
         bool _rotating;
         bool _using_robot_motor_feedback;
+        double _rotation_acceleration;
 
         bobi_msgs::PoseStamped _current_position;
         bobi_msgs::MotorVelocities _new_velocities;
