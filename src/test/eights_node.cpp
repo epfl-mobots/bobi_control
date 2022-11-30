@@ -1,5 +1,6 @@
 #include <ros/ros.h>
 #include <bobi_msgs/PoseStamped.h>
+#include <bobi_msgs/TargetPose.h>
 
 int main(int argc, char** argv)
 {
@@ -19,10 +20,10 @@ int main(int argc, char** argv)
     nh->param<int>("eights/rate", rate, 10);
     nh->param<float>("eights/shift_angle", shift_angle, 0.785);
 
-    ros::Publisher wp_pub = nh->advertise<bobi_msgs::PoseStamped>("target_position", 1);
+    ros::Publisher wp_pub = nh->advertise<bobi_msgs::TargetPose>("target_position", 1);
 
     int num_waypoints = static_cast<int>(2. * M_PI / waypoint_angle);
-    std::vector<bobi_msgs::PoseStamped> waypoints;
+    std::vector<bobi_msgs::TargetPose> waypoints;
 
     std::vector<std::vector<float>> centers;
     centers.resize(8);
@@ -44,16 +45,16 @@ int main(int argc, char** argv)
         }
 
         for (size_t i = 0; i < num_waypoints; ++i) {
-            bobi_msgs::PoseStamped wp;
-            wp.pose.xyz.x = radius1 * std::cos(sign * waypoint_angle * i + centers[j][4]) + centers[j][0];
-            wp.pose.xyz.y = radius1 * std::sin(sign * waypoint_angle * i + centers[j][4]) + centers[j][1];
+            bobi_msgs::TargetPose wp;
+            wp.target.pose.xyz.x = radius1 * std::cos(sign * waypoint_angle * i + centers[j][4]) + centers[j][0];
+            wp.target.pose.xyz.y = radius1 * std::sin(sign * waypoint_angle * i + centers[j][4]) + centers[j][1];
             waypoints.push_back(wp);
         }
 
         for (size_t i = 0; i < num_waypoints; ++i) {
-            bobi_msgs::PoseStamped wp;
-            wp.pose.xyz.x = radius2 * std::cos(-sign * waypoint_angle * i + centers[j][5]) + centers[j][2];
-            wp.pose.xyz.y = radius2 * std::sin(-sign * waypoint_angle * i + centers[j][5]) + centers[j][3];
+            bobi_msgs::TargetPose wp;
+            wp.target.pose.xyz.x = radius2 * std::cos(-sign * waypoint_angle * i + centers[j][5]) + centers[j][2];
+            wp.target.pose.xyz.y = radius2 * std::sin(-sign * waypoint_angle * i + centers[j][5]) + centers[j][3];
             waypoints.push_back(wp);
         }
     }

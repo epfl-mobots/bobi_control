@@ -26,7 +26,7 @@ int main(int argc, char** argv)
 
     ROS_INFO("Robot %d controller using %s topic for pose info", id, pose_topic.c_str());
 
-    LinearSpeedControl ctrl(nh, id, pose_topic, wheel_radius, wheel_distance);
+    APrioriControl ctrl(nh, id, pose_topic, wheel_radius, wheel_distance);
 
     int rate;
     nh->param<int>("apriori_control/rate", rate, 30);

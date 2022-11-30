@@ -131,6 +131,8 @@ namespace bobi {
         {
             std::lock_guard<std::mutex> guard(_tpos_mtx);
             _target_pose = msg->target;
+            _desired_speed = msg->desired_speed;
+            // _desired_acceleration = msg->desired_acceleration;
         }
 
         std::shared_ptr<ros::NodeHandle> _nh;

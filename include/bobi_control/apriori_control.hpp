@@ -134,7 +134,8 @@ namespace bobi {
                 // clipping values
                 double v_hat;
                 if (use_mouse_wpt) {
-                    p[0] = 0.0 * error[0];
+                    _desired_acceleration = 1.0;
+                    p[0] = 0.072 * error[0];
                     double pid_v = ((p[0] + i[0] + d[0]) / _scaler[0]) / _dt_ideal;
                     v_hat = _clip(pid_v, 0);
                 }
@@ -149,8 +150,8 @@ namespace bobi {
                     _new_velocities.acceleration = _rotation_acceleration;
                 }
                 else {
-                    // _new_velocities.acceleration = 0;
-                    _new_velocities.acceleration = _desired_acceleration;
+                    _new_velocities.acceleration = 0; // this will set the default acceleration
+                    // _new_velocities.acceleration = _desired_acceleration + 0.1;
                 }
 
                 _new_velocities.left = (2 * v_hat - w_hat * l) / 2.;

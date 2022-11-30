@@ -1,5 +1,6 @@
 #include <ros/ros.h>
 #include <bobi_msgs/PoseStamped.h>
+#include <bobi_msgs/TargetPose.h>
 
 int main(int argc, char** argv)
 {
@@ -17,7 +18,7 @@ int main(int argc, char** argv)
     nh->param<int>("circular_trajectory/rate", rate, 2);
     nh->param<bool>("circular_trajectory/cw", cw, true);
 
-    ros::Publisher wp_pub = nh->advertise<bobi_msgs::PoseStamped>("target_position", 1);
+    ros::Publisher wp_pub = nh->advertise<bobi_msgs::TargetPose>("target_position", 1);
 
     int sign = 1;
     if (!cw) {
@@ -25,18 +26,18 @@ int main(int argc, char** argv)
     }
 
     int num_waypoints = static_cast<int>(2. * M_PI / waypoint_angle);
-    std::vector<bobi_msgs::PoseStamped> waypoints;
+    std::vector<bobi_msgs::TargetPose> waypoints;
     for (int i = 0; i < num_waypoints; ++i) {
-        bobi_msgs::PoseStamped wp;
-        wp.pose.xyz.x = radius * std::cos(sign * waypoint_angle * i) + center[0];
-        wp.pose.xyz.y = radius * std::sin(sign * waypoint_angle * i) + center[1];
+        bobi_msgs::TargetPose wp;
+        wp.target.pose.xyz.x = radius * std::cos(sign * waypoint_angle * i) + center[0];
+        wp.target.pose.xyz.y = radius * std::sin(sign * waypoint_angle * i) + center[1];
         waypoints.push_back(wp);
     }
 
     ros::Rate loop_rate(rate);
     int iter = 0;
     while (ros::ok()) {
-        ROS_INFO("(x=%f, y=%f)", waypoints[iter].pose.xyz.x, waypoints[iter].pose.xyz.y);
+        ROS_INFO("(x=%f, y=%f)", waypoints[iter].target.pose.xyz.x, waypoints[iter].target.pose.xyz.y);
         wp_pub.publish(waypoints[iter++]);
         if (iter == num_waypoints) {
             iter = 0;

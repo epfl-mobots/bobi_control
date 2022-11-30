@@ -2,6 +2,7 @@
 #include <bobi_msgs/PoseStamped.h>
 #include <bobi_msgs/PoseVec.h>
 #include <bobi_msgs/PoseStamped.h>
+#include <bobi_msgs/TargetPose.h>
 
 bobi_msgs::PoseStamped start, stop, cur_waypoint;
 std::atomic<bool> flag = false;
@@ -45,13 +46,15 @@ int main(int argc, char** argv)
     stop.pose.xyz.y = vstop[1];
     cur_waypoint = start;
 
-    pub = nh->advertise<bobi_msgs::PoseStamped>("target_position", 1);
+    pub = nh->advertise<bobi_msgs::TargetPose>("target_position", 1);
     ros::Subscriber rpose = nh->subscribe("robot_poses", 1, pose_cb);
 
     ros::Rate loop_rate(10);
     int iter = 0;
     while (ros::ok()) {
-        pub.publish(cur_waypoint);
+        bobi_msgs::TargetPose t;
+        t.target = cur_waypoint;
+        pub.publish(t);
         ros::spinOnce();
         loop_rate.sleep();
     }
