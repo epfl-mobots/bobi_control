@@ -141,7 +141,7 @@ namespace bobi {
                 }
                 else {
                     double pid_v = ((p[0] + i[0] + d[0]) / _scaler[0]) / _dt_ideal;
-                    v_hat = _clip(pid_v + _desired_speed, 0);
+                    v_hat = _clip(pid_v + _Kp_ref * _desired_speed, 0);
                 }
                 double w_hat = _clip(((p[1] + i[1] + d[1]) * _scaler[1]) / _dt_ideal, 1);
 
@@ -195,6 +195,7 @@ namespace bobi {
         {
             ROS_INFO("Updated %s config", __func__);
             _Kp = {config.Kp_v, config.Kp_w};
+            _Kp_ref = config.Kp_ref;
             _Ki = {config.Ki_v, config.Ki_w};
             _Kd = {config.Kd_v, config.Kd_w};
             _lb = {config.lb_v, config.lb_w};
@@ -221,6 +222,7 @@ namespace bobi {
         ros::ServiceClient _set_duty_cycle_cli;
 
         std::array<double, 2> _Kp, _Kd, _Ki;
+        double _Kp_ref;
         std::array<double, 2> _prev_error;
         std::array<double, 2> _integral;
         std::array<double, 2> _lb, _ub;
