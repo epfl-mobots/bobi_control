@@ -56,6 +56,10 @@ namespace bobi {
 
                 bool reset_current_pose = false;
                 bool use_reference_speed = true;
+                bool lure_rescue_routine = true;
+                float lure_rescue_thres = 7.;
+                float ref_reset_thres = 7.;
+                bool verbose = false;
 
                 // simu
                 int itermax = 50;
@@ -145,148 +149,158 @@ namespace bobi {
                     std::lock_guard<std::mutex> pos_guard(_tpos_mtx);
 
                     if (!_individual_poses.size()) {
-                        ROS_ERROR("No agent information");
+                        if (_params.verbose) {
+                            ROS_ERROR("No agent information");
+                        }
                         return;
                     }
 
                     _current_time += _dt;
 
                     _pose_in_cm = _individual_poses[_id];
-                    if (_reference_pose.rpy.pitch == -1 || _reset_current_pose) {
+                    if (_reference_pose.rpy.pitch == -1) {
+                        _reference_pose = _pose_in_cm.pose;
+                        _reference_pose.rpy.pitch = 0;
+                    }
+
+                    if (_reset_current_pose) {
+                        bobi_msgs::PoseStamped ref;
+                        ref.pose = _reference_pose;
+                        double ref_vs_real = euc_distance(_individual_poses[_id], ref);
+                        if (_reset_current_pose && (ref_vs_real > _params.ref_reset_thres)) {
+                            _reference_pose = _pose_in_cm.pose;
+                            if (_params.verbose) {
+                                ROS_WARN("Too far from reference trajectory %f", ref_vs_real);
+                            }
+                        }
+                    }
+
+                    if (_params.lure_rescue_routine) {
                         bobi_msgs::PoseStamped rpose = convert_bottom2top(_pose);
+                        rpose.pose.xyz.x -= _setup_center_top[0];
+                        rpose.pose.xyz.y -= _setup_center_top[1];
+                        rpose.pose.xyz.x *= 100;
+                        rpose.pose.xyz.y *= 100;
+
                         double lure_vs_robot_dist = euc_distance(_individual_poses[_id], rpose);
-                        if (lure_vs_robot_dist > 7.) {
+                        if (lure_vs_robot_dist > _params.lure_rescue_thres || _lure_rescue) {
                             _reference_pose = _pose_in_cm.pose;
                             _reference_pose.rpy.pitch = 0;
+                            if (_params.verbose) {
+                                ROS_WARN("Lure detached (?). Lure rescue routine: enabled");
+                            }
+                            _lure_rescue = true;
+                        }
+
+                        if (lure_vs_robot_dist < 1. && _lure_rescue) {
+                            _lure_rescue = false;
+                            if (_params.verbose) {
+                                ROS_WARN("Lure rescue routine: disabled");
+                            }
                         }
                     }
 
-                    if (!_lure_rescue) {
-                        if (_current_time >= _tau) {
-                            if (_speeds.size() == 0) {
-                                for (size_t i = 0; i < _individual_poses.size(); ++i) {
-                                    _speeds.push_back(_params.vmin / 100.);
-                                }
+                    if (_current_time >= _tau) {
+                        if (_speeds.size() == 0) {
+                            for (size_t i = 0; i < _individual_poses.size(); ++i) {
+                                _speeds.push_back(_params.vmin / 100.);
                             }
+                        }
 
-                            _kicked = _kick();
-                            if (!_kicked) {
+                        _kicked = _kick();
+                        if (!_kicked) {
 #ifndef USE_BLOCKING_REJ
-                                if ((_iters > _params.itermax)) {
-                                    bobi_msgs::PoseStamped target_pose;
-                                    target_pose.header.stamp = ros::Time::now();
-                                    float new_r = std::sqrt(_pose_in_cm.pose.xyz.x * _pose_in_cm.pose.xyz.x + _pose_in_cm.pose.xyz.y * _pose_in_cm.pose.xyz.y) * 0.98;
-                                    float theta = _angle_to_pipi(std::atan2(_pose_in_cm.pose.xyz.y, _pose_in_cm.pose.xyz.x) * 1.1);
-                                    target_pose.pose.xyz.x = new_r * std::cos(theta);
-                                    target_pose.pose.xyz.y = new_r * std::sin(theta);
-                                    target_pose.pose.xyz.x /= 100.; // position in m
-                                    target_pose.pose.xyz.y /= 100.; // position in m
-                                    target_pose.pose.xyz.x += _setup_center_top[0]; // offset by center x coordinate
-                                    target_pose.pose.xyz.y += _setup_center_top[1]; // offset by center y coordinate
-                                    _set_target_pose_pub.publish(target_pose);
-                                    _current_time = 0;
-                                    _tau = 0.5;
-                                }
-
-                                ++_iters;
-                                _reset_current_pose = true;
-#endif
-                                return;
-                            }
-                            else {
+                            if ((_iters > _params.itermax)) {
+                                bobi_msgs::PoseStamped target_pose;
+                                target_pose.header.stamp = ros::Time::now();
+                                float new_r = std::sqrt(_pose_in_cm.pose.xyz.x * _pose_in_cm.pose.xyz.x + _pose_in_cm.pose.xyz.y * _pose_in_cm.pose.xyz.y) * 0.98;
+                                float theta = _angle_to_pipi(std::atan2(_pose_in_cm.pose.xyz.y, _pose_in_cm.pose.xyz.x) * 1.1);
+                                target_pose.pose.xyz.x = new_r * std::cos(theta);
+                                target_pose.pose.xyz.y = new_r * std::sin(theta);
+                                target_pose.pose.xyz.x /= 100.; // position in m
+                                target_pose.pose.xyz.y /= 100.; // position in m
+                                target_pose.pose.xyz.x += _setup_center_top[0]; // offset by center x coordinate
+                                target_pose.pose.xyz.y += _setup_center_top[1]; // offset by center y coordinate
+                                _set_target_pose_pub.publish(target_pose);
                                 _current_time = 0;
-                                _iters = 0;
-                                _reset_current_pose = _params.reset_current_pose;
+                                _tau = 0.5;
                             }
 
-                            bobi_msgs::PoseStamped target_pose;
-                            target_pose.header.stamp = ros::Time::now();
-                            target_pose.pose = _desired_pose;
-
-                            // Take care of scale
-                            target_pose.pose.xyz.x /= 100.; // position in m
-                            target_pose.pose.xyz.y /= 100.; // position in m
-                            target_pose.pose.xyz.x += _setup_center_top[0]; // offset by center x coordinate
-                            target_pose.pose.xyz.y += _setup_center_top[1]; // offset by center y coordinate
-
-                            // store the kick specs for logs (and control?)
-                            bobi_msgs::KickSpecs kick_specs;
-                            kick_specs.agent.pose = _reference_pose;
-                            kick_specs.agent.pose.xyz.x /= 100.; // position in m
-                            kick_specs.agent.pose.xyz.y /= 100.; // position in m
-                            kick_specs.agent.pose.xyz.x += _setup_center_top[0]; // offset by center x coordinate
-                            kick_specs.agent.pose.xyz.y += _setup_center_top[1]; // offset by center y coordinate
-                            // kick_specs.agent = convert_top2bottom(kick_specs.agent);
-
-                            // kick_specs.neighs.poses.resize(_individual_poses.size() - _id - 1);
-                            for (size_t i : _most_inf_idcs) {
-#ifndef SIMU_MODE
-                                if (i == _id) {
-                                    ROS_ERROR("this should never happen");
-                                }
+                            ++_iters;
+                            _reset_current_pose = true;
 #endif
-
-                                bobi_msgs::PoseStamped p;
-                                p.header = _individual_poses[i].header;
-                                p.pose.rpy.yaw = _individual_poses[i].pose.rpy.yaw;
-                                p.pose.xyz.x = _individual_poses[i].pose.xyz.x / 100.; // position in m
-                                p.pose.xyz.y = _individual_poses[i].pose.xyz.y / 100.; // position in m
-                                p.pose.xyz.x += _setup_center_top[0]; // offset by center x coordinate
-                                p.pose.xyz.y += _setup_center_top[1]; // offset by center y coordinate
-                                // p = convert_top2bottom(p);
-                                kick_specs.neighs.poses.push_back(p);
-                            }
-                            kick_specs.target_x = target_pose.pose.xyz.x;
-                            kick_specs.target_y = target_pose.pose.xyz.y;
-                            kick_specs.dl = _speed * _tau + _params.dc;
-                            kick_specs.dphi = _angle_to_pipi(target_pose.pose.rpy.yaw - _reference_pose.rpy.yaw);
-                            kick_specs.phi = target_pose.pose.rpy.yaw;
-                            kick_specs.tau = _tau;
-                            kick_specs.tau0 = _params.tau0;
-                            kick_specs.perceived = _params.perceived_agents;
-                            _kick_specs_pub.publish(kick_specs);
-
-                            _prev_reference_pose = _reference_pose;
-                            _reference_pose = _desired_pose;
-                            float prev_speed = _speed;
-                            _speed = std::sqrt(std::pow(_reference_pose.xyz.x - _prev_reference_pose.xyz.x, 2)
-                                         + std::pow(_reference_pose.xyz.y - _prev_reference_pose.xyz.y, 2))
-                                / _tau;
-
-                            _mean_speed = _speed / 100.; // speed in m/s
-                            // _target_velocities.resultant = _mean_speed;
-                            // _set_target_vel_pub.publish(_target_velocities);
-
-                            target_pose = convert_top2bottom(target_pose);
-                            bobi_msgs::TargetPose t;
-                            t.target = target_pose;
-                            t.desired_speed = _mean_speed;
-                            t.desired_acceleration = std::abs(_speed - prev_speed) / _tau / 100.;
-                            _set_target_pose_pub.publish(t);
+                            return;
                         }
-                    }
-                    else {
-                        ROS_WARN("Rescuing lure");
+                        else {
+                            _current_time = 0;
+                            _iters = 0;
+                            _reset_current_pose = _params.reset_current_pose;
+                        }
+
                         bobi_msgs::PoseStamped target_pose;
-
-                        target_pose = _individual_poses[_id];
                         target_pose.header.stamp = ros::Time::now();
-
-                        _mean_speed = 4;
-                        _current_time = 0;
-                        _tau = 0;
+                        target_pose.pose = _desired_pose;
 
                         // Take care of scale
-                        _mean_speed /= 100.; // speed in m/s
                         target_pose.pose.xyz.x /= 100.; // position in m
                         target_pose.pose.xyz.y /= 100.; // position in m
-                        target_pose.pose.xyz.x += _setup_center_bottom[0]; // offset by center x coordinate
-                        target_pose.pose.xyz.y += _setup_center_bottom[1]; // offset by center y coordinate
+                        target_pose.pose.xyz.x += _setup_center_top[0]; // offset by center x coordinate
+                        target_pose.pose.xyz.y += _setup_center_top[1]; // offset by center y coordinate
 
-                        target_pose.header.stamp = ros::Time::now();
-                        _set_target_pose_pub.publish(target_pose);
-                        _target_velocities.resultant = _mean_speed;
-                        _set_target_vel_pub.publish(_target_velocities);
+                        // store the kick specs for logs (and control?)
+                        bobi_msgs::KickSpecs kick_specs;
+                        kick_specs.agent.pose = _reference_pose;
+                        kick_specs.agent.pose.xyz.x /= 100.; // position in m
+                        kick_specs.agent.pose.xyz.y /= 100.; // position in m
+                        kick_specs.agent.pose.xyz.x += _setup_center_top[0]; // offset by center x coordinate
+                        kick_specs.agent.pose.xyz.y += _setup_center_top[1]; // offset by center y coordinate
+                        // kick_specs.agent = convert_top2bottom(kick_specs.agent);
+
+                        // kick_specs.neighs.poses.resize(_individual_poses.size() - _id - 1);
+                        for (size_t i : _most_inf_idcs) {
+#ifndef SIMU_MODE
+                            if (i == _id) {
+                                assert(false && "something went wrong");
+                            }
+#endif
+
+                            bobi_msgs::PoseStamped p;
+                            p.header = _individual_poses[i].header;
+                            p.pose.rpy.yaw = _individual_poses[i].pose.rpy.yaw;
+                            p.pose.xyz.x = _individual_poses[i].pose.xyz.x / 100.; // position in m
+                            p.pose.xyz.y = _individual_poses[i].pose.xyz.y / 100.; // position in m
+                            p.pose.xyz.x += _setup_center_top[0]; // offset by center x coordinate
+                            p.pose.xyz.y += _setup_center_top[1]; // offset by center y coordinate
+                            // p = convert_top2bottom(p);
+                            kick_specs.neighs.poses.push_back(p);
+                        }
+                        kick_specs.target_x = target_pose.pose.xyz.x;
+                        kick_specs.target_y = target_pose.pose.xyz.y;
+                        kick_specs.dl = _speed * _tau + _params.dc;
+                        kick_specs.dphi = _angle_to_pipi(target_pose.pose.rpy.yaw - _reference_pose.rpy.yaw);
+                        kick_specs.phi = target_pose.pose.rpy.yaw;
+                        kick_specs.tau = _tau;
+                        kick_specs.tau0 = _params.tau0;
+                        kick_specs.perceived = _params.perceived_agents;
+                        _kick_specs_pub.publish(kick_specs);
+
+                        _prev_reference_pose = _reference_pose;
+                        _reference_pose = _desired_pose;
+                        float prev_speed = _speed;
+                        _speed = std::sqrt(std::pow(_reference_pose.xyz.x - _prev_reference_pose.xyz.x, 2)
+                                     + std::pow(_reference_pose.xyz.y - _prev_reference_pose.xyz.y, 2))
+                            / _tau;
+
+                        _mean_speed = _speed / 100.; // speed in m/s
+                        // _target_velocities.resultant = _mean_speed;
+                        // _set_target_vel_pub.publish(_target_velocities);
+
+                        target_pose = convert_top2bottom(target_pose);
+                        bobi_msgs::TargetPose t;
+                        t.target = target_pose;
+                        t.desired_speed = _mean_speed;
+                        t.desired_acceleration = std::abs(_speed - prev_speed) / _tau / 100.;
+                        _set_target_pose_pub.publish(t);
                     }
                 }
             }
@@ -343,6 +357,10 @@ namespace bobi {
                 _params.itermax = config.itermax;
                 _params.reset_current_pose = config.reset_current_pose;
                 _params.use_reference_speed = config.use_reference_speed;
+                _params.lure_rescue_routine = config.lure_rescue_routine;
+                _params.lure_rescue_thres = config.lure_rescue_thres;
+                _params.ref_reset_thres = config.ref_reset_thres;
+                _params.verbose = config.verbose;
             }
 
             dynamic_reconfigure::Server<bobi_control::BurstAndCoastConfig> _cfg_server;
