@@ -12,6 +12,7 @@
 #include <bobi_msgs/SpeedEstimateVec.h>
 #include <bobi_msgs/KickSpecs.h>
 #include <bobi_msgs/TargetPose.h>
+#include <bobi_msgs/BacIntervene.h>
 
 #include <tools/random/random_generator.hpp>
 
@@ -59,7 +60,10 @@ namespace bobi {
                 bool lure_rescue_routine = true;
                 float lure_rescue_thres = 7.;
                 float ref_reset_thres = 7.;
+                float early_kick_thres = 1.;
                 bool verbose = false;
+                bool pause = false;
+                bool reset_with_robot_pose = false;
 
                 // simu
                 int itermax = 50;
@@ -90,7 +94,9 @@ namespace bobi {
                   _iters(0),
                   _lure_rescue(false),
                   _mean_speed(0.),
-                  _reset_current_pose(false)
+                  _reset_current_pose(false),
+                  _bac_intervene_flag(false)
+
             {
                 // Initialize ROS interface
                 dynamic_reconfigure::Server<bobi_control::BurstAndCoastConfig>::CallbackType f;
@@ -108,6 +114,8 @@ namespace bobi {
                 center_top.pose.xyz.y = _setup_center_top[1];
                 bobi_msgs::PoseStamped center_bottom = convert_top2bottom(center_top);
                 _setup_center_bottom = {center_bottom.pose.xyz.x, center_bottom.pose.xyz.y};
+                ROS_INFO("Starting with top center (%f, %f)", _setup_center_top[0], _setup_center_top[1]);
+                ROS_INFO("Starting with bottom center (%f, %f)", _setup_center_bottom[0], _setup_center_bottom[1]);
 
                 // Initialize model params and the first kick
                 _current_time = 0;
@@ -119,12 +127,17 @@ namespace bobi {
                 _reference_pose.xyz.y = 0;
                 _reference_pose.rpy.yaw = 0;
                 _reference_pose.rpy.pitch = -1;
+                _gatt = _params.gamma_attraction;
+                _gali = _params.gamma_alignment;
+                _mspeed_coeff = 1.;
                 // _reference_pose.rpy.pitch = 0;
 
                 _set_vel_pub = nh->advertise<bobi_msgs::MotorVelocities>("set_velocities", 1);
                 _set_target_pose_pub = nh->advertise<bobi_msgs::TargetPose>("target_position", 1);
                 _set_target_vel_pub = nh->advertise<bobi_msgs::MotorVelocities>("target_velocities", 1);
                 _kick_specs_pub = nh->advertise<bobi_msgs::KickSpecs>("kick_specs", 1);
+
+                _bac_intervene_srv = nh->advertiseService("bac_intervene", &BurstAndCoast::_bac_intervene_srv_cb, this);
 
                 // _set_vel_pub = nh->advertise<bobi_msgs::MotorVelocities>("target_velocities", 1);
                 _cur_pose_sub = nh->subscribe("filtered_poses", 1, &BurstAndCoast::_individual_poses_cb, this);
@@ -158,6 +171,17 @@ namespace bobi {
                     _current_time += _dt;
 
                     _pose_in_cm = _individual_poses[_id];
+                    bobi_msgs::PoseStamped rpose = convert_bottom2top(_pose);
+                    rpose.pose.xyz.x -= _setup_center_top[0];
+                    rpose.pose.xyz.y -= _setup_center_top[1];
+                    rpose.pose.xyz.x *= 100;
+                    rpose.pose.xyz.y *= 100;
+
+                    if (_params.pause) {
+                        _reference_pose = rpose.pose;
+                        return;
+                    }
+
                     if (_reference_pose.rpy.pitch == -1) {
                         _reference_pose = _pose_in_cm.pose;
                         _reference_pose.rpy.pitch = 0;
@@ -166,21 +190,32 @@ namespace bobi {
                     if (_reset_current_pose) {
                         bobi_msgs::PoseStamped ref;
                         ref.pose = _reference_pose;
-                        double ref_vs_real = euc_distance(_individual_poses[_id], ref);
+                        double ref_vs_real;
+                        if (_params.reset_with_robot_pose) {
+                            ref_vs_real = euc_distance(rpose, ref);
+                        }
+                        else {
+                            ref_vs_real = euc_distance(_individual_poses[_id], ref);
+                        }
+
                         if (_reset_current_pose && (ref_vs_real > _params.ref_reset_thres)) {
-                            _reference_pose = _pose_in_cm.pose;
+                            if (_params.reset_with_robot_pose) {
+                                _reference_pose = rpose.pose;
+                            }
+                            else {
+                                _reference_pose = _pose_in_cm.pose;
+                            }
+
                             if (_params.verbose) {
                                 ROS_WARN("Too far from reference trajectory %f", ref_vs_real);
                             }
+
+                            _tau = 0;
+                            _current_time = 0;
                         }
                     }
 
                     if (_params.lure_rescue_routine) {
-                        bobi_msgs::PoseStamped rpose = convert_bottom2top(_pose);
-                        rpose.pose.xyz.x -= _setup_center_top[0];
-                        rpose.pose.xyz.y -= _setup_center_top[1];
-                        rpose.pose.xyz.x *= 100;
-                        rpose.pose.xyz.y *= 100;
 
                         double lure_vs_robot_dist = euc_distance(_individual_poses[_id], rpose);
                         if (lure_vs_robot_dist > _params.lure_rescue_thres || _lure_rescue) {
@@ -196,6 +231,18 @@ namespace bobi {
                             _lure_rescue = false;
                             if (_params.verbose) {
                                 ROS_WARN("Lure rescue routine: disabled");
+                            }
+                        }
+                    }
+
+                    { // check if we are close enough to do an early kick
+                        bobi_msgs::PoseStamped desired;
+                        desired.pose = _desired_pose;
+                        double distance_to_goal = euc_distance(desired, rpose);
+                        if (distance_to_goal < _params.early_kick_thres) {
+                            _tau = 0; // kick earlier than expected if within range of the target position
+                            if (_params.verbose) {
+                                ROS_WARN("Kicking early");
                             }
                         }
                     }
@@ -234,7 +281,6 @@ namespace bobi {
                         else {
                             _current_time = 0;
                             _iters = 0;
-                            _reset_current_pose = _params.reset_current_pose;
                         }
 
                         bobi_msgs::PoseStamped target_pose;
@@ -282,6 +328,9 @@ namespace bobi {
                         kick_specs.tau = _tau;
                         kick_specs.tau0 = _params.tau0;
                         kick_specs.perceived = _params.perceived_agents;
+                        kick_specs.intervene = _bac_intervene_flag;
+                        kick_specs.gatt = _gatt;
+                        kick_specs.gali = _gali;
                         _kick_specs_pub.publish(kick_specs);
 
                         _prev_reference_pose = _reference_pose;
@@ -331,6 +380,27 @@ namespace bobi {
                 }
             }
 
+            bool _bac_intervene_srv_cb(
+                bobi_msgs::BacIntervene::Request& req,
+                bobi_msgs::BacIntervene::Response& res)
+            {
+                _bac_intervene_flag = req.enable;
+                if (req.enable) {
+                    _gatt = req.gatt;
+                    _gali = req.gali;
+                    _mspeed_coeff = req.mspeed_coeff;
+                    res.success = true;
+                }
+                else {
+                    _gatt = _params.gamma_attraction;
+                    _gali = _params.gamma_alignment;
+                    _mspeed_coeff = 1.;
+                    res.success = false;
+                }
+
+                return true;
+            }
+
             void _config_cb(bobi_control::BurstAndCoastConfig& config, uint32_t level)
             {
                 ROS_INFO("Updated %s config", __func__);
@@ -360,7 +430,16 @@ namespace bobi {
                 _params.lure_rescue_routine = config.lure_rescue_routine;
                 _params.lure_rescue_thres = config.lure_rescue_thres;
                 _params.ref_reset_thres = config.ref_reset_thres;
+                _params.early_kick_thres = config.early_kick_thres;
                 _params.verbose = config.verbose;
+                _params.pause = config.pause;
+                _params.reset_with_robot_pose = config.reset_with_robot_pose;
+                _reset_current_pose = _params.reset_current_pose;
+                if (!_bac_intervene_flag) {
+                    _gatt = _params.gamma_attraction;
+                    _gali = _params.gamma_alignment;
+                    _mspeed_coeff = 1.;
+                }
             }
 
             dynamic_reconfigure::Server<bobi_control::BurstAndCoastConfig> _cfg_server;
@@ -371,6 +450,8 @@ namespace bobi {
             ros::Subscriber _cur_pose_sub;
             ros::Subscriber _individual_poses_sub;
             ros::Subscriber _speed_estimates_sub;
+
+            ros::ServiceServer _bac_intervene_srv;
 
             ros::ServiceClient _max_accel_cli;
             ros::ServiceClient _set_duty_cycle_cli;
@@ -384,6 +465,7 @@ namespace bobi {
             bool _lure_rescue;
             float _mean_speed;
             bool _reset_current_pose;
+            bool _bac_intervene_flag;
             ros::Time _last_pose_stamp;
 
             bobi_msgs::PoseStamped _pose_in_cm;
@@ -450,6 +532,8 @@ namespace bobi {
                         }
                     } while (_speed > _params.vcut); // speed
                     // _speed = std::min(_speed, _params.vcut);
+                    _speed = std::max(_speed, _params.vmin);
+                    _speed *= _mspeed_coeff;
                     _speed = std::max(_speed, _params.vmin);
 
                     float dtau = _params.taumean - _params.taumin;
@@ -563,13 +647,13 @@ namespace bobi {
                     // float eatt = 1. - 0.48 * std::cos(dphi_ij) - 0.31 * std::cos(2. * dphi_ij);
                     // float oatt = std::sin(psi_ij) * (1. + std::cos(psi_ij));
                     float eatt = 1.;
-                    float dphiatt = _params.gamma_attraction * fatt * oatt * eatt;
+                    float dphiatt = _gatt * fatt * oatt * eatt;
 
                     // float fali = (dij + 3. ) / 6. * std::exp(-std::pow(dij / 20., 2));
                     float fali = std::exp(-std::pow(dij / 20., 2));
                     float oali = std::sin(dphi_ij) * (1. + 0.3 * std::cos(2. * dphi_ij));
                     float eali = 1. + 0.6 * std::cos(psi_ij) - 0.32 * std::cos(2. * psi_ij);
-                    float dphiali = _params.gamma_alignment * fali * oali * eali;
+                    float dphiali = _gali * fali * oali * eali;
 
                     dphi_fish.push_back(dphiatt + dphiali);
                 } // for each neighbour
@@ -628,6 +712,10 @@ namespace bobi {
 
             bobi_msgs::Pose _reference_pose;
             bobi_msgs::Pose _prev_reference_pose;
+
+            float _gatt;
+            float _gali;
+            float _mspeed_coeff;
 
         public:
             float get_tau()

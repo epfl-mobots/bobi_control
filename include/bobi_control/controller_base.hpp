@@ -133,6 +133,9 @@ namespace bobi {
             _target_pose = msg->target;
             _desired_speed = msg->desired_speed;
             // _desired_acceleration = msg->desired_acceleration;
+            if (msg->is_top && _pose_topic == "robot_poses") {
+                _target_pose = convert_top2bottom(_target_pose);
+            }
         }
 
         std::shared_ptr<ros::NodeHandle> _nh;
