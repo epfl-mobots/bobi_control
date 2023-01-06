@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import rospy
-from bobi_msgs.msg import PoseVec, PoseStamped, MotorVelocities, DLISpecs
+from bobi_msgs.msg import PoseVec, PoseStamped, MotorVelocities, DLISpecs, TargetPose
 from bobi_msgs.srv import ConvertCoordinates
 from geometry_msgs.msg import Point
 
@@ -160,6 +160,10 @@ most_influential_individual = {
 
 class DLI:
     def __init__(self):
+        rate = rospy.get_param("dl_interaction/rate", 8.3)
+        self._dt = 1 / rate  # hardcode for now
+        self._dt = max(self._dt, 1e-3)
+
         self._model_path = rospy.get_param(
             'dl_interaction/model_path', './dl_interaction.h5')
         if '~' in self._model_path:
@@ -190,12 +194,13 @@ class DLI:
         self._individual_poses = None
         self._individual_velocities = None
         self._dt = 1 / self._rate
-        self._var_coef = 0.006
+        self._var_coef = 0.0
 
         self._prev_target = None
         self._lure_rescue = False
         self._lure_lost_count = 0
         self._robot_pose = None
+        self._speed = None
 
         self._center = [0, 0]
         cx = rospy.get_param(
@@ -215,9 +220,13 @@ class DLI:
             'dl_interaction/filtered_poses_drop', PoseVec, self._filtered_poses_cb)
         self._rp_sub = rospy.Subscriber(
             'dl_interaction/robot_poses_drop', PoseVec, self._robot_poses_cb)
+        # self._fp_sub = rospy.Subscriber(
+        #     'filtered_poses', PoseVec, self._filtered_poses_cb)
+        # self._rp_sub = rospy.Subscriber(
+        #     'robot_poses', PoseVec, self._robot_poses_cb)
 
         self._target_p_pub = rospy.Publisher(
-            'target_position', PoseStamped, queue_size=1)
+            'target_position', TargetPose, queue_size=1)
         self._target_v_pub = rospy.Publisher(
             'target_velocities', MotorVelocities, queue_size=1)
         self._dli_spec_pub = rospy.Publisher(
@@ -272,13 +281,23 @@ class DLI:
         if new_p is None:
             return
 
+        target_p = TargetPose()
+        target_p.target.header.stamp = start
+        target_p.target.pose.xyz.x = new_p[0] * self._radius + self._bcenter.x
+        target_p.target.pose.xyz.y = new_p[1] * self._radius + self._bcenter.y
+        if self._prev_target is None:
+            target_p.desired_speed = 0.05
+        else:
+            x_new = new_p[0] * self._radius
+            x_old = self._prev_target[0] * self._radius
+            y_new = new_p[1] * self._radius
+            y_old = self._prev_target[1] * self._radius
+            target_p.desired_speed = np.sqrt((x_new-x_old) ** 2
+                                             + (y_new - y_old) ** 2) / (1 / self._rate)
+            self._speed = [new_v[0], new_v[1]]
+
         self._prev_target = new_p
-
-        target_p = PoseStamped()
-        target_p.header.stamp = start
-        target_p.pose.xyz.x = new_p[0] * self._radius + self._bcenter.x
-        target_p.pose.xyz.y = new_p[1] * self._radius + self._bcenter.y
-
+        target_p.target.header.stamp = start
         self._target_p_pub.publish(target_p)
 
         dli_specs = DLISpecs()
@@ -286,8 +305,8 @@ class DLI:
         dli_specs.gy = specs[1]
         dli_specs.sx = specs[2]
         dli_specs.sy = specs[3]
-        dli_specs.target_x = target_p.pose.xyz.x
-        dli_specs.target_y = target_p.pose.xyz.y
+        dli_specs.target_x = target_p.target.pose.xyz.x
+        dli_specs.target_y = target_p.target.pose.xyz.y
         dli_specs.agent.pose.xyz.x = self._individual_poses[-1, self._id * 2]
         dli_specs.agent.pose.xyz.y = self._individual_poses[-1,
                                                             self._id * 2 + 1]
@@ -297,17 +316,7 @@ class DLI:
         dli_specs.neigh.pose.xyz.y = self._individual_poses[-1, 3]
         self._dli_spec_pub.publish(dli_specs)
 
-        lin_v = np.sqrt(
-            (new_v[0] * self._radius) ** 2
-            + (new_v[1] * self._radius) ** 2)
-        mv = MotorVelocities()
-        mv.resultant = lin_v
-        # TODO: this will work with the linear speed controller but perhaps we should have a velocity control directly for the motors
-        self._target_v_pub.publish(mv)
-
-        target_p.header.stamp = start
-
-        stop = (rospy.Time.now() - start).to_sec()
+        # stop = (rospy.Time.now() - start).to_sec()
         # print('Query frequency: {:.1f}'.format(1 / stop))
 
     def _angle_to_pipi(angle):
@@ -377,10 +386,13 @@ class DLI:
             cp, cv, prediction, self._dt)
 
     def _sample_valid_position(self, position, velocity, prediction, timestep):
+        var = 1
+        it = 0
+
         g_x = np.random.normal(
-            prediction[0, 0], prediction[0, 2] * self._var_coef, 1)[0]
+            prediction[0, 0], prediction[0, 2] * self._var_coef * var, 1)[0]
         g_y = np.random.normal(
-            prediction[0, 1], prediction[0, 3] * self._var_coef, 1)[0]
+            prediction[0, 1], prediction[0, 3] * self._var_coef * var, 1)[0]
 
         v_hat = velocity
         v_hat[0] += g_x
@@ -389,15 +401,27 @@ class DLI:
         r = np.sqrt((p_hat[0] - setup.center()[0])
                     ** 2 + (p_hat[1] - setup.center()[1]) ** 2)
 
+        # r = 1 + 1
+        # while r > self._radius and it < 50:
+        #     g_x = np.random.normal(
+        #         prediction[0, 0], prediction[0, 2] * self._var_coef * var, 1)[0]
+        #     g_y = np.random.normal(
+        #         prediction[0, 1], prediction[0, 3] * self._var_coef * var, 1)[0]
+
+        #     v_hat = velocity
+        #     v_hat[0] += g_x
+        #     v_hat[1] += g_y
+        #     p_hat = position + v_hat * timestep
+        #     r = np.sqrt((p_hat[0] - setup.center()[0])
+        #                 ** 2 + (p_hat[1] - setup.center()[1]) ** 2)
+        #     var += 1
+        #     it += 1
+
         return [p_hat, v_hat, setup.is_valid(r), [g_x, g_y, prediction[0, 2] * self._var_coef, prediction[0, 3] * self._var_coef]]
 
     def _filtered_poses_cb(self, msg):
         if (len(msg.poses) == 0):
             return
-
-        self._dt = (msg.poses[0].header.stamp - self._prev_stamp).to_sec()
-        self._dt = max(self._dt, 1e-3)
-        self._prev_stamp = msg.poses[0].header.stamp
 
         if self._individual_poses is None:
             self._individual_poses = np.empty((0, 2 * (self._num_neighs + 1)))
@@ -410,11 +434,8 @@ class DLI:
                 if self._lure_rescue:
                     print('Rescuing lure...')
                 conv = Point()
-                conv.x = p.pose.xyz.x
-                conv.y = p.pose.xyz.y
-                conv = self._convert_top2bottom(conv)
-                conv.x -= self._bcenter.x
-                conv.y -= self._bcenter.y
+                conv.x = p.pose.xyz.x - self._center[0]
+                conv.y = p.pose.xyz.y - self._center[1]
                 conv.x /= self._radius
                 conv.y /= self._radius
                 row.append(conv.x)
@@ -431,6 +452,9 @@ class DLI:
             rolled_m = np.roll(self._individual_poses, shift=1, axis=0)
             self._individual_velocities = (
                 self._individual_poses - rolled_m) / self._dt
+            if self._speed is not None:
+                self._individual_velocities[-1, 0] = self._speed[0]
+                self._individual_velocities[-1, 1] = self._speed[1]
 
             self._individual_poses = self._individual_poses[-self._num_timesteps:, :]
             self._individual_velocities = self._individual_velocities[-self._num_timesteps:, :]
@@ -440,13 +464,15 @@ class DLI:
         if self._individual_poses is None:
             return
 
-        ind_pose = self._individual_poses[-1, self._id * 2: (self._id * 2 + 2)]
-        ind_pose *= self._radius
-        ind_pose[0] += self._bcenter.x
-        ind_pose[1] += self._bcenter.y
+        # from copy import deepcopy
+        # ind_pose = deepcopy(
+        #     self._individual_poses[-1, self._id * 2: (self._id * 2 + 2)])
+        # ind_pose *= self._radius
+        # ind_pose[0] += self._bcenter.x
+        # ind_pose[1] += self._bcenter.y
 
-        dist = np.sqrt((self._robot_pose.pose.xyz.x -
-                       ind_pose[0]) ** 2 + (self._robot_pose.pose.xyz.y - ind_pose[1]) ** 2)
+        # dist = np.sqrt((self._robot_pose.pose.xyz.x -
+        #                 ind_pose[0]) ** 2 + (self._robot_pose.pose.xyz.y - ind_pose[1]) ** 2)
 
         # if dist > 0.1:
         #     print(dist)
