@@ -8,7 +8,7 @@ from bobi_msgs.srv import EnableIR, EnableTemp
 
 class ThrustmasterJoy:
     def __init__(self):
-        rospy.Subscriber("joy_fishbot", Joy, self.joy_cb)
+        rospy.Subscriber("joy_lurebot", Joy, self.joy_cb)
         self._vel_pub = rospy.Publisher(
             "set_velocities", MotorVelocities, queue_size=1)
 

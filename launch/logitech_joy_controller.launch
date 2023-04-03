@@ -2,7 +2,7 @@
     <arg name="ns" default="/" />
     <group ns="$(arg ns)">
         <arg name="joy_dev" default="/dev/input/js0" />
-        <arg name="joy_topic" default="joy_fishbot" />
+        <arg name="joy_topic" default="joy_lurebot" />
         <arg name="deadzone" default="0.08" />
 
         <rosparam>
