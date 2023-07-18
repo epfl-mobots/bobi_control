@@ -15,6 +15,7 @@
 #include <bobi_msgs/BacIntervene.h>
 
 #include <tools/random/random_generator.hpp>
+#include <tools/archive.hpp>
 
 #include <dynamic_reconfigure/server.h>
 
@@ -29,6 +30,7 @@ namespace bobi {
         namespace defaults {
             struct RummyIndividualParams {
                 float radius = 24.5;
+                float pradius = 25;
 
                 // interactions
                 bool use_closest_individual = false;
@@ -64,6 +66,8 @@ namespace bobi {
                 bool verbose = false;
                 bool pause = false;
                 bool reset_with_robot_pose = false;
+
+                float kappa = 0.0;
 
                 // simu
                 int itermax = 50;
@@ -116,6 +120,39 @@ namespace bobi {
                 _setup_center_bottom = {center_bottom.pose.xyz.x, center_bottom.pose.xyz.y};
                 ROS_INFO("Starting with top center (%f, %f)", _setup_center_top[0], _setup_center_top[1]);
                 ROS_INFO("Starting with bottom center (%f, %f)", _setup_center_bottom[0], _setup_center_bottom[1]);
+
+                nh->param<std::string>("burst_and_coast/potential", _potential_path, "");
+                if (!_potential_path.empty()){
+                    _w_potential = true;
+                    ROS_INFO("Using potential for the interactions at path: %s", _potential_path.c_str());
+                }
+
+
+                _w_potential = false;
+                aegean::tools::Archive arch(false);
+                if (!_potential_path.empty()) {
+                    _w_potential = true;
+
+                    arch.load(_vertices, _potential_path + "/XY.txt");
+                    arch.load(_x_potential, _potential_path + "/x_potential.txt");
+                    arch.load(_y_potential, _potential_path + "/y_potential.txt");
+
+                    // _omega = Eigen::VectorXd::Zero(_vertices.rows());
+                    // for (int i = 0; i < _vertices.rows(); ++i) {
+                    //     int kp = (i + 1) % _vertices.rows();
+                    //     int km = (i - 1) % _vertices.rows();
+                    //     if (km < 0) {
+                    //         km = _omega.rows() + km;
+                    //     }
+                    //     _omega(i) = std::atan2(
+                    //         _vertices(kp, 1) - _vertices(km, 1),
+                    //         _vertices(kp, 0) - _vertices(km, 0));
+                    // }
+                    // _cos_omega.array() = Eigen::cos(_omega.array()).array();
+                    // _sin_omega.array() = Eigen::sin(_omega.array()).array();
+                }
+
+
 
                 // Initialize model params and the first kick
                 _current_time = 0;
@@ -435,6 +472,8 @@ namespace bobi {
                 _params.pause = config.pause;
                 _params.reset_with_robot_pose = config.reset_with_robot_pose;
                 _reset_current_pose = _params.reset_current_pose;
+                _params.kappa = config.kappa;
+
                 if (!_bac_intervene_flag) {
                     _gatt = _params.gamma_attraction;
                     _gali = _params.gamma_alignment;
@@ -542,6 +581,14 @@ namespace bobi {
                     // cognitive noise
                     float gauss = std::sqrt(-2. * log(ran3())) * cos(2 * M_PI * ran3());
                     float phi_new = _reference_pose.rpy.yaw + dphi_int + _params.gamma_rand * gauss * (1. - _params.alpha_w * fw);
+                    
+                    if (_w_potential && (_params.kappa > 0.)) {
+                        float chi = _compute_potential_inf();
+                        phi_new = std::atan2(
+                            (1 - _params.kappa) * std::cos(phi_new) + _params.kappa * std::cos(chi),
+                            (1 - _params.kappa) * std::sin(phi_new) + _params.kappa * std::sin(chi));
+                    }
+                    
                     // float dl = _speed * _params.tau0 * (1. - std::exp(-_tau / _params.tau0)) + _params.dc;
                     float dl = _speed * _tau + _params.dc;
                     float x_new = _reference_pose.xyz.x + dl * std::cos(phi_new);
@@ -697,6 +744,15 @@ namespace bobi {
                 return neigh_idcs;
             }
 
+            float _compute_potential_inf() const
+            {
+                double bin_size = _params.pradius * 2 / _x_potential.rows();
+                int xidx = (_reference_pose.xyz.x + _params.pradius) / bin_size;
+                int yidx = (_reference_pose.xyz.y + _params.pradius) / bin_size;
+                return std::atan2(_y_potential(xidx, yidx), _x_potential(xidx, yidx));
+            }
+            
+
             defaults::RummyIndividualParams _params;
 
             uint64_t _num_kicks;
@@ -716,6 +772,15 @@ namespace bobi {
             float _gatt;
             float _gali;
             float _mspeed_coeff;
+
+            bool _w_potential;
+            std::string _potential_path;
+            Eigen::MatrixXd _vertices;
+            Eigen::MatrixXd _x_potential;
+            Eigen::MatrixXd _y_potential;
+            // Eigen::VectorXd _omega;
+            // Eigen::VectorXd _cos_omega;
+            // Eigen::VectorXd _sin_omega;
 
         public:
             float get_tau()

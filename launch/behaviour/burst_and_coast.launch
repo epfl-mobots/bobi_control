@@ -8,6 +8,12 @@
             wheel_distance: 0.0451
             burst_and_coast:
                 rate: 30
+                potential: "/home/vpapaspy/Desktop/hex_cw"
+                <!-- potential: "/home/vpapaspy/Desktop/hex_ccw" -->
+                <!-- potential: "/home/vpapaspy/Desktop/fhex_cw" -->
+                <!-- potential: "/home/vpapaspy/Desktop/fhex_ccw" -->
+                <!-- potential: "/home/vpapaspy/Desktop/france" -->
+                <!-- potential: "/home/vpapaspy/Desktop/switzerland" -->
         </rosparam>
 
         <!-- Thymio values -->
