@@ -132,24 +132,9 @@ namespace bobi {
                 aegean::tools::Archive arch(false);
                 if (!_potential_path.empty()) {
                     _w_potential = true;
-
                     arch.load(_vertices, _potential_path + "/XY.txt");
                     arch.load(_x_potential, _potential_path + "/x_potential.txt");
                     arch.load(_y_potential, _potential_path + "/y_potential.txt");
-
-                    // _omega = Eigen::VectorXd::Zero(_vertices.rows());
-                    // for (int i = 0; i < _vertices.rows(); ++i) {
-                    //     int kp = (i + 1) % _vertices.rows();
-                    //     int km = (i - 1) % _vertices.rows();
-                    //     if (km < 0) {
-                    //         km = _omega.rows() + km;
-                    //     }
-                    //     _omega(i) = std::atan2(
-                    //         _vertices(kp, 1) - _vertices(km, 1),
-                    //         _vertices(kp, 0) - _vertices(km, 0));
-                    // }
-                    // _cos_omega.array() = Eigen::cos(_omega.array()).array();
-                    // _sin_omega.array() = Eigen::sin(_omega.array()).array();
                 }
 
 
