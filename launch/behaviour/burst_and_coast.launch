@@ -12,8 +12,8 @@
                 <!-- potential: "/home/vpapaspy/Desktop/hex_ccw" -->
                 <!-- potential: "/home/vpapaspy/Desktop/fhex_cw" -->
                 <!-- potential: "/home/vpapaspy/Desktop/fhex_ccw" -->
-                <!-- potential: "/home/vpapaspy/Desktop/france" -->
-                <!-- potential: "/home/vpapaspy/Desktop/switzerland" -->
+                <!-- potential: "/home/vpapaspy/Desktop/switzerland_cw" -->
+                <!-- potential: "/home/vpapaspy/Desktop/france_cw" -->
         </rosparam>
 
         <!-- Thymio values -->

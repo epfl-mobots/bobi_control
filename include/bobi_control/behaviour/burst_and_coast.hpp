@@ -132,7 +132,7 @@ namespace bobi {
                 aegean::tools::Archive arch(false);
                 if (!_potential_path.empty()) {
                     _w_potential = true;
-                    arch.load(_vertices, _potential_path + "/XY.txt");
+                    // arch.load(_vertices, _potential_path + "/XY.txt");
                     arch.load(_x_potential, _potential_path + "/x_potential.txt");
                     arch.load(_y_potential, _potential_path + "/y_potential.txt");
                 }
@@ -732,8 +732,8 @@ namespace bobi {
             float _compute_potential_inf() const
             {
                 double bin_size = _params.pradius * 2 / _x_potential.rows();
-                int xidx = (_reference_pose.xyz.x + _params.pradius) / bin_size;
-                int yidx = (_reference_pose.xyz.y + _params.pradius) / bin_size;
+                int yidx = (_reference_pose.xyz.x + _params.pradius) / bin_size;
+                int xidx = (_reference_pose.xyz.y + _params.pradius) / bin_size;
                 return std::atan2(_y_potential(xidx, yidx), _x_potential(xidx, yidx));
             }
             
@@ -760,12 +760,9 @@ namespace bobi {
 
             bool _w_potential;
             std::string _potential_path;
-            Eigen::MatrixXd _vertices;
+            // Eigen::MatrixXd _vertices;
             Eigen::MatrixXd _x_potential;
             Eigen::MatrixXd _y_potential;
-            // Eigen::VectorXd _omega;
-            // Eigen::VectorXd _cos_omega;
-            // Eigen::VectorXd _sin_omega;
 
         public:
             float get_tau()
